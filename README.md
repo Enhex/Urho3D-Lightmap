@@ -2,16 +2,16 @@
   
 ---
 ### Description
-Lightmap texture baking sample using the GPU.  
+GPU Lightmap texture baking sample.  
 Currently, this implementation is written more like a texture baker. It merely generates texture as how the object is lit and shadowed in the scene and does not look for the second UV texCoordinates as expected by the Urho3D lightmap shader.  
-There is no GI implemented, yet.
+There is no GI implemented as yet.
 
 #### OpenGL Only
-I've applied the same changes to the hlsl shader, and for some reason, I only get black images from the view capture. 
+I've applied the same changes to the hlsl shader, and for some reason, I only get black images from the view capture. I will not be pursuing this fix but will continue with the full implementation on OpenGL.
 
 ---  
 ### Setup:
-* only one lightmap texture can be generated at a time, otherwise, the captured view images get dirty. For this reason, the **maxThreads_** is set to 1.
+* only one lightmap texture can be generated at a time, otherwise, the captured view images get dirty. For this reason, the **maxThreads_** variable is set to 1 in the LightmapCreator class.
 * all static models in the scene must have **ViewMask set to 0x01**.
 * output files are placed in the **Lightmap/BakedTextures** folder.
   
