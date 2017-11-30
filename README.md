@@ -2,12 +2,12 @@
   
 ---
 ### Description
-Bake lightmap texture sample using GPU.
+Lightmap texture baking sample using GPU.
 
  
 ---  
 ### Information:
-Currently, this implementation is written more like a texture baker, as it does not look for the second UV texCoordinates as how the Urho3D lightmap shader is implemented.
+Currently, this implementation is written more like a texture baker. It merely generates texture as how the object is lit and shaded in the scene and does not look for the second UV texCoordinates as expected by the Urho3D lightmap shader.
   
   
 ---
