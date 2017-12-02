@@ -29,6 +29,9 @@ Shown shaded with DiffLightMap and NoTextureLightMap techniques.
 #### Direct Lighting Baked Textures
 ![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/bakedtextures.png)  
 
+#### Indirect Lighting Baked Textures
+![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/bakedIndirectTextures.png)  
+
 ---
 ### To Build
 To build it, unzip/drop the repository into your Urho3D/ folder and build it the same way as you'd build the default Samples that come with Urho3D.
