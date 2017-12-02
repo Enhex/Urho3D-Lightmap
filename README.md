@@ -21,7 +21,7 @@ I've applied the same changes to the hlsl shader, and for some reason, I only ge
 ![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/directonly1.png)  
 ![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/directonly2.png)  
 
-#### Indirect Lighting
+#### Direct and Indirect Lighting
 Shown shaded with DiffLightMap and NoTextureLightMap techniques.
 ![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/indirect1.png)  
 ![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/indirect2.png)  
