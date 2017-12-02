@@ -448,10 +448,12 @@ void Lightmap::HandlePostRenderIndirectLighting(StringHash eventType, VariantMap
 
         // write final image
         indirectLightImage_->Clear(Color(0,0,0,0));
+        float fw = (float)indirectLightImage_->GetWidth();
+        float fh = (float)indirectLightImage_->GetHeight();
         for ( unsigned i = 0; i < pixelData_.Size(); ++i )
         {
-            int x = (int)(pixelData_[i].uv_.x_ * (float)indirectLightImage_->GetWidth());
-            int y = (int)(pixelData_[i].uv_.y_ * (float)indirectLightImage_->GetHeight());
+            int x = (int)(pixelData_[i].uv_.x_ * fw);
+            int y = (int)(pixelData_[i].uv_.y_ * fh);
             indirectLightImage_->SetPixel(x, y, pixelData_[i].col_);
         }
 
