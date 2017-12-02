@@ -121,14 +121,14 @@ void LightmapDemo::CreateInstructions()
     UI* ui = GetSubsystem<UI>();
 
     // Construct new Text object, set string to display and font to use
-    Text* instructionText = ui->GetRoot()->CreateChild<Text>();
-    instructionText->SetText("Use WASD keys and mouse/touch to move\nF5 to start lightmap process");
-    instructionText->SetFont(cache->GetResource<Font>("Fonts/Anonymous Pro.ttf"), 12);
-    instructionText->SetColor(Color::CYAN);
+    instructionText_ = ui->GetRoot()->CreateChild<Text>();
+    instructionText_->SetText("Use WASD keys and mouse/touch to move\nF5 to start lightmap process");
+    instructionText_->SetFont(cache->GetResource<Font>("Fonts/Anonymous Pro.ttf"), 12);
+    instructionText_->SetColor(Color::CYAN);
 
     // Position the text relative to the screen center
-    instructionText->SetHorizontalAlignment(HA_CENTER);
-    instructionText->SetPosition(0, 10);
+    instructionText_->SetHorizontalAlignment(HA_CENTER);
+    instructionText_->SetPosition(0, 10);
 
     textProcessStatus_ = ui->GetRoot()->CreateChild<Text>();
     //textProcessStatus_->SetText("Use WASD keys and mouse/touch to move");
@@ -238,6 +238,8 @@ void LightmapDemo::HandleUpdate(StringHash eventType, VariantMap& eventData)
         LightmapCreator *lightmapCreator = GetSubsystem<LightmapCreator>();
         lightmapCreator->Init(scene_, outputPath);
         lightmapCreator->GenerateLightmaps();
+
+        instructionText_->SetText("Use WASD keys and mouse/touch to move");
 
         startLightmapProcess_ = true;
     }

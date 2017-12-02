@@ -54,6 +54,7 @@ protected:
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
 
 protected:
+    WeakPtr<Text> instructionText_;
     WeakPtr<Text> textProcessStatus_;
     bool startLightmapProcess_;
 };

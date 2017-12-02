@@ -291,7 +291,7 @@ void LightmapCreator::SendIndirectLightingStatus(bool removemsg)
     using namespace IndirectLightStatus;
 
     VariantMap& eventData  = GetEventDataMap();
-    eventData[P_TITLE]     = String("Indirect light tris: ");
+    eventData[P_TITLE]     = String("Indirect: processing tris - ");
     eventData[P_TOTAL]     = totalTriangleCnt_;
     eventData[P_COMPLETED] = trianglesCompleted_;
     eventData[P_REMOVEMSG] = removemsg;

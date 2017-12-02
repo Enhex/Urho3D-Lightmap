@@ -47,6 +47,12 @@
 #include "Lightmap.h"
 
 #include <Urho3D/DebugNew.h>
+
+//=============================================================================
+//=============================================================================
+void ImageSmooth(SharedPtr<Image> image, SharedPtr<Image> outImage);
+void ImageDilate(SharedPtr<Image> image, SharedPtr<Image> outImage);
+
 //=============================================================================
 //=============================================================================
 Lightmap::Lightmap(Context* context)
@@ -460,6 +466,18 @@ void Lightmap::HandlePostRenderIndirectLighting(StringHash eventType, VariantMap
         String name = ToString("node%u_indirect.png", node_->GetID());
         String path = filepath_ + name;
 
+        SharedPtr<Image> outImage(new Image(context_));
+        outImage->SetSize(indirectLightImage_->GetWidth(), indirectLightImage_->GetHeight(), 4);
+
+        ImageSmooth(indirectLightImage_, outImage);
+        indirectLightImage_->SetData(outImage->GetData());
+
+        for ( unsigned i = 0; i < 2; ++i )
+        {
+            ImageDilate(indirectLightImage_, outImage);
+            ImageDilate(outImage, indirectLightImage_);
+        }
+
         indirectLightImage_->SavePNG(path);
 
         // send msgs
@@ -638,6 +656,108 @@ void Lightmap::SetupPixelData()
             }
         }
     }
+}
+
+//=============================================================================
+// ImageSmooth and ImageDilate fns, ref: https://github.com/ands/lightmapper.git
+//=============================================================================
+void ImageSmooth(SharedPtr<Image> image, SharedPtr<Image> outImage)
+{
+    int w = (int)image->GetWidth();
+    int h = (int)image->GetHeight();
+
+	for ( int y = 0; y < h; ++y )
+	{
+		for ( int x = 0; x < w; ++x )
+		{
+			Color color(0,0,0,0);
+			int n = 0;
+
+			for ( int dy = -1; dy <= 1; ++dy )
+			{
+				int cy = y + dy;
+				for ( int dx = -1; dx <= 1; ++dx )
+				{
+					int cx = x + dx;
+					if (cx >= 0 && cx < w && cy >= 0 && cy < h)
+					{
+                        Color dcolor = image->GetPixel(cx, cy);
+						bool valid = false;
+						for ( int i = 0; i < 4; ++i )
+                        {
+							valid |= dcolor.Data()[i] > 0.0f;
+                        }
+
+						if (valid)
+						{
+                            color += dcolor;
+							n++;
+						}
+					}
+				}
+			}
+
+            if (n > 0)
+            {
+                color = color * (1.0f/(float)n);
+                outImage->SetPixel(x, y, color);
+            }
+            else
+            {
+                outImage->SetPixel(x, y, Color(0,0,0,0));
+            }
+		}
+	}
+}
+
+void ImageDilate(SharedPtr<Image> image, SharedPtr<Image> outImage)
+{
+    int w = (int)image->GetWidth();
+    int h = (int)image->GetHeight();
+
+	for ( int y = 0; y < h; ++y )
+	{
+		for ( int x = 0; x < w; ++x )
+		{
+			Color color = image->GetPixel(x, y);
+			bool valid = false;
+			for (int i = 0; i < 4; i++)
+			{
+                valid |= color.Data()[i] > 0.0f;
+			}
+			if (!valid)
+			{
+				int n = 0;
+				const int dx[] = { -1, 0, 1,  0 };
+				const int dy[] = {  0, 1, 0, -1 };
+				for ( int d = 0; d < 4; ++d )
+				{
+					int cx = x + dx[d];
+					int cy = y + dy[d];
+					if (cx >= 0 && cx < w && cy >= 0 && cy < h)
+					{
+						Color dcolor= image->GetPixel(cx, cy);
+						bool dvalid = false;
+						for (int i = 0; i < 4; i++)
+						{
+                            dvalid |= dcolor.Data()[i] > 0.0f;
+						}
+						if (dvalid)
+						{
+							color += dcolor;
+							n++;
+						}
+					}
+				}
+				if (n)
+				{
+					color = color * (1.0f/(float)n);
+				}
+			}
+
+            outImage->SetPixel(x, y, color);
+		}
+	}
 }
 
 
