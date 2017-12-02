@@ -61,6 +61,7 @@ Lightmap::Lightmap(Context* context)
     , texWidth_(512)
     , texHeight_(512)
     , saveFile_(true)
+    , bakeIndirectLight_(false)
 {
 }
 
@@ -121,6 +122,7 @@ void Lightmap::BakeDirectLight(const String &filepath, unsigned imageSize)
 
         texWidth_ = texHeight_ = imageSize;
         filepath_ = filepath;
+        bakeIndirectLight_ = false;
 
         // clone mat to make changes
         SharedPtr<Material> dupMat = staticModel_->GetMaterial()->Clone();
@@ -141,9 +143,9 @@ void Lightmap::BakeDirectLight(const String &filepath, unsigned imageSize)
         staticModel_->SetViewMask(staticModel_->GetViewMask() | ViewMask_Capture);
 
         // setup for direct lighting
-        InitDirectLightSettings(staticModel_->GetWorldBoundingBox());
+        InitBakeLightSettings(staticModel_->GetWorldBoundingBox());
 
-        SubscribeToEvent(E_ENDFRAME, URHO3D_HANDLER(Lightmap, HandlePostRenderDirectLighting));
+        SubscribeToEvent(E_ENDFRAME, URHO3D_HANDLER(Lightmap, HandlePostRenderBakeLighting));
     }
 }
 
@@ -155,8 +157,11 @@ void Lightmap::BeginIndirectLighting(const String &filepath, unsigned imageSize)
         texWidth_ = texHeight_ = imageSize;
         filepath_ = filepath;
 
-        // hemisphere solid angle
-        solidangle_ = 2.0f * M_PI /(float)(imageSize * imageSize);
+        // hemisphere solid angle - the max fov is actually 160, not 180
+        // 360       = 4 * pi and 
+        // M_MAX_FOV = x * pi 
+        const float x = M_MAX_FOV * 4.0f/360.0f;
+        solidangle_ = x * M_PI /(float)(imageSize * imageSize);
 
         // state change
         SetState(State_CreateGeomData);
@@ -164,7 +169,7 @@ void Lightmap::BeginIndirectLighting(const String &filepath, unsigned imageSize)
     }
 }
 
-void Lightmap::SwatToLightmapTechnique()
+void Lightmap::SwitchToLightmapTechnique()
 {
     // InitModelSetting() fn must be called 1st
     if (staticModel_)
@@ -175,7 +180,7 @@ void Lightmap::SwatToLightmapTechnique()
         SharedPtr<Material> dupMat = staticModel_->GetMaterial()->Clone();
         staticModel_->SetMaterial(dupMat);
 
-        // choose appropriate bake technique
+        // choose appropriate lightmap technique
         Technique *technique = dupMat->GetTechnique(0);
         if (technique->GetName().Find("NoTexture") != String::NPOS)
         {
@@ -193,7 +198,47 @@ void Lightmap::SwatToLightmapTechnique()
     }
 }
 
-void Lightmap::InitDirectLightSettings(const BoundingBox& worldBoundingBox)
+void Lightmap::BakeIndirectLight(const String &filepath, unsigned imageSize)
+{
+    // InitModelSetting() fn must be called 1st
+    if (staticModel_)
+    {
+        ResourceCache* cache = GetSubsystem<ResourceCache>();
+
+        texWidth_ = texHeight_ = imageSize;
+        filepath_ = filepath;
+        bakeIndirectLight_ = true;
+
+        // clone mat to make changes
+        SharedPtr<Material> dupMat = staticModel_->GetMaterial()->Clone();
+        staticModel_->SetMaterial(dupMat);
+
+        // choose appropriate bake technique
+        Technique *technique = dupMat->GetTechnique(0);
+        if (technique->GetName().Find("NoTexture") != String::NPOS)
+        {
+            dupMat->SetTechnique(0, cache->GetResource<Technique>("Lightmap/Techniques/NoTextureBakeIndirect.xml"));
+        }
+        else
+        {
+            dupMat->SetTechnique(0, cache->GetResource<Technique>("Lightmap/Techniques/DiffBakeIndirect.xml"));
+        }
+        dupMat->SetShaderParameter("MatEmissiveColor", Color::BLACK);
+        SharedPtr<Texture2D> emissiveTex(new Texture2D(context_));
+        emissiveTex->SetData(indirectLightImage_);
+        dupMat->SetTexture(TU_EMISSIVE, emissiveTex);
+
+        //**NOTE** change mask
+        staticModel_->SetViewMask(staticModel_->GetViewMask() | ViewMask_Capture);
+
+        // setup for direct lighting
+        InitBakeLightSettings(staticModel_->GetWorldBoundingBox());
+
+        SubscribeToEvent(E_ENDFRAME, URHO3D_HANDLER(Lightmap, HandlePostRenderBakeLighting));
+    }
+}
+
+void Lightmap::InitBakeLightSettings(const BoundingBox& worldBoundingBox)
 {
     camNode_ = GetScene()->CreateChild("RenderCamera");
 
@@ -230,8 +275,8 @@ void Lightmap::InitIndirectLightSettings()
     camNode_ = GetScene()->CreateChild("RenderCamera");
 
     camera_ = camNode_->CreateComponent<Camera>();
-    // using hemisphere
-    camera_->SetFov(180.0f);
+    // using hemisphere - not quite, M_MAX_FOV = 160
+    camera_->SetFov(M_MAX_FOV);
     camera_->SetNearClip(0.0001f);
     camera_->SetFarClip(300.0f);
     camera_->SetAspectRatio(1.0f);
@@ -392,7 +437,7 @@ void Lightmap::OutputFile()
     // generate output file
     if (saveFile_)
     {
-        String name = ToString("node%u_direct.png", node_->GetID());
+        String name = !bakeIndirectLight_?ToString("node%u_bakeDirect.png", node_->GetID()):ToString("node%u_bakeIndirect.png", node_->GetID());
         String path = filepath_ + name;
 
         directLightImage_->SavePNG(path);
@@ -409,7 +454,7 @@ void Lightmap::SendDirectLightMsg()
     SendEvent(E_DIRECTLIGHTINGDONE, eventData);
 }
 
-void Lightmap::HandlePostRenderDirectLighting(StringHash eventType, VariantMap& eventData)
+void Lightmap::HandlePostRenderBakeLighting(StringHash eventType, VariantMap& eventData)
 {
     // get image prior to deleting the surface
     directLightImage_ = renderTexture_->GetImage();
@@ -423,13 +468,31 @@ void Lightmap::HandlePostRenderDirectLighting(StringHash eventType, VariantMap& 
     SendDirectLightMsg();
 }
 
+void Lightmap::SmoothAndDilate(SharedPtr<Image> inImage, bool dilate)
+{
+    SharedPtr<Image> outImage(new Image(context_));
+    outImage->SetSize(inImage->GetWidth(), inImage->GetHeight(), 4);
+
+    ImageSmooth(inImage, outImage);
+    inImage->SetData(outImage->GetData());
+
+    if (dilate)
+    {
+        for ( unsigned i = 0; i < 2; ++i )
+        {
+            ImageDilate(inImage, outImage);
+            ImageDilate(outImage, inImage);
+        }
+    }
+}
+
 void Lightmap::HandlePostRenderIndirectLighting(StringHash eventType, VariantMap& eventData)
 {
     // get image
     indirectLightImage_ = renderTexture_->GetImage();
 
     // average color
-    pixelData_[curPixelIdx_].col_ = Color(0,0,0,0);
+    pixelData_[curPixelIdx_].col_ = Color::TRANSPARENT;
     for ( int y = 0; y < indirectLightImage_->GetHeight(); ++y )
     {
         for ( int x = 0; x < indirectLightImage_->GetWidth(); ++x )
@@ -444,8 +507,8 @@ void Lightmap::HandlePostRenderIndirectLighting(StringHash eventType, VariantMap
 
     if (++curPixelIdx_ >= pixelData_.Size())
     {
-        renderSurface_ = NULL;
-        UnsubscribeFromEvent(E_ENDFRAME);
+        Stop();
+        SetState(State_IndirectLightEnd);
 
         float elapsed = (float)((long)timerIndirect_.GetMSec(false))/1000.0f;
         char buff[20];
@@ -453,31 +516,18 @@ void Lightmap::HandlePostRenderIndirectLighting(StringHash eventType, VariantMap
         URHO3D_LOGINFO(ToString("node%u: indirect completion = ", node_->GetID()) + String(buff));
 
         // write final image
-        indirectLightImage_->Clear(Color(0,0,0,0));
-        float fw = (float)indirectLightImage_->GetWidth();
-        float fh = (float)indirectLightImage_->GetHeight();
+        indirectLightImage_->Clear(Color::TRANSPARENT);
         for ( unsigned i = 0; i < pixelData_.Size(); ++i )
         {
-            int x = (int)(pixelData_[i].uv_.x_ * fw);
-            int y = (int)(pixelData_[i].uv_.y_ * fh);
-            indirectLightImage_->SetPixel(x, y, pixelData_[i].col_);
+            indirectLightImage_->SetPixel(pixelData_[i].iuv_.x_, pixelData_[i].iuv_.y_, pixelData_[i].col_);
         }
 
-        String name = ToString("node%u_indirect.png", node_->GetID());
+        // smooth and dilate
+        SmoothAndDilate(indirectLightImage_);
+
+        // requires save, ignore savefile flag
+        String name = ToString("node%u_lightmap.png", node_->GetID());
         String path = filepath_ + name;
-
-        SharedPtr<Image> outImage(new Image(context_));
-        outImage->SetSize(indirectLightImage_->GetWidth(), indirectLightImage_->GetHeight(), 4);
-
-        ImageSmooth(indirectLightImage_, outImage);
-        indirectLightImage_->SetData(outImage->GetData());
-
-        for ( unsigned i = 0; i < 2; ++i )
-        {
-            ImageDilate(indirectLightImage_, outImage);
-            ImageDilate(outImage, indirectLightImage_);
-        }
-
         indirectLightImage_->SavePNG(path);
 
         // send msgs
@@ -490,7 +540,6 @@ void Lightmap::HandlePostRenderIndirectLighting(StringHash eventType, VariantMap
 
         // send tri complete msg
         unsigned nextTriIdx = pixelData_[curPixelIdx_].triIdx_;
-
         if (nextTriIdx != prevTriIdx)
         {
             SendTriangleCompleteMsg();
@@ -506,7 +555,7 @@ void Lightmap::SetupGeomData()
     const unsigned char *vertexData = (const unsigned char*)vbuffer->Lock(0, vbuffer->GetVertexCount());
 
     // transform in world space
-    const Matrix3x4 objMatrix = node_->GetTransform();
+    const Matrix3x4 objMatrix = node_->GetWorldTransform();
     const Quaternion objRotation = node_->GetWorldRotation();
 
     // populate geom data
@@ -651,7 +700,7 @@ void Lightmap::SetupPixelData()
                     pixelPt.triIdx_ = i;
                     pixelPt.pos_    = point;
                     pixelPt.normal_ = normal;
-                    pixelPt.uv_     = uv;
+                    pixelPt.iuv_    = IntVector2(x, y);
                 }
             }
         }

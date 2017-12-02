@@ -87,7 +87,8 @@ public:
     bool RestoreModelSetting();
     void BakeDirectLight(const String &filepath, unsigned imageSize=DEFAULT_IMAGE_SIZE);
     void BeginIndirectLighting(const String &filepath, unsigned imageSize=DEFAULT_INDIRECT_IMAGE_SIZE);
-    void SwatToLightmapTechnique();
+    void SwitchToLightmapTechnique();
+    void BakeIndirectLight(const String &filepath, unsigned imageSize=DEFAULT_IMAGE_SIZE);
 
     void SetSavefile(bool bset)                     { saveFile_ =  bset; }
     bool GetSavefile() const                        { return saveFile_; }
@@ -95,10 +96,10 @@ public:
     const SharedPtr<Image>& GetDirectLightImage() const { return directLightImage_; }
 
 protected:
-    void InitDirectLightSettings(const BoundingBox& worldBoundingBox);
+    void InitBakeLightSettings(const BoundingBox& worldBoundingBox);
     void InitIndirectLightSettings();
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
-    void HandlePostRenderDirectLighting(StringHash eventType, VariantMap& eventData);
+    void HandlePostRenderBakeLighting(StringHash eventType, VariantMap& eventData);
     void HandlePostRenderIndirectLighting(StringHash eventType, VariantMap& eventData);
     void RestoreTempViewMask();
     void SendDirectLightMsg();
@@ -115,6 +116,7 @@ protected:
     void SendTriangleCompleteMsg();
     void SendIndirectCompleteMsg();
     void SetCameraPosRotForCapture();
+    void SmoothAndDilate(SharedPtr<Image> image, bool dilate=true);
 
 protected:
     WeakPtr<StaticModel>    staticModel_;
@@ -136,6 +138,7 @@ protected:
     unsigned                texWidth_;
     unsigned                texHeight_;
     bool                    saveFile_;
+    bool                    bakeIndirectLight_;
 
     Mutex                   mutexStateLock_;
     Mutex                   mutexSurfImageLock_;
@@ -166,11 +169,11 @@ private:
     };
     struct PixelPoint
     {
-        unsigned triIdx_;
-        Vector3  pos_;
-        Vector3  normal_;
-        Vector2  uv_;
-        Color    col_;
+        unsigned    triIdx_;
+        Vector3     pos_;
+        Vector3     normal_;
+        IntVector2  iuv_;
+        Color       col_;
     };
 
     PODVector<GeomData> geomData_;

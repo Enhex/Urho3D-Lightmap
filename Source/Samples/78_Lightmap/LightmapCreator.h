@@ -66,10 +66,13 @@ protected:
     unsigned ParseModelsInScene();
     bool HasTexCoord2(StaticModel *staticModel);
     void SetupIndirectProcess();
-    void QueueNodesForDirectLightBaking();
+    void SetupBakeIndirectProcess();
+    void QueueNodesForLightBaking();
     void QueueNodesForIndirectLightProcess();
 
     void BakeDirectLight(Node *node);
+    void BakeIndirectLight(Node *node);
+
     void RemoveCompletedNode(Node *node);
     void SendEventMsg();
     void RestoreModelSettigs();
@@ -105,11 +108,11 @@ private:
     enum LightMapState
     {
         LightMap_UnInit,
-        LightMap_DirectLight,
+        LightMap_BakeDirectLight,
         LightMap_IndirectLightBegin,
         LightMap_IndirectLightProcessing,
         LightMap_SwapToLightmapTexture,
-        LightMap_DilateTextures,
+        LightMap_BakeIndirectLight,
         LightMap_RestoreScene,
         LightMap_Complete,
     };

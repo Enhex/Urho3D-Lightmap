@@ -30,20 +30,21 @@ varying vec4 vWorldPos;
     #ifdef POINTLIGHT
         varying vec3 vCubeMaskVec;
     #endif
+    #ifdef BAKE
+        varying vec2 vTexCoord2;
+    #endif
+
 #else
     varying vec3 vVertexLight;
     varying vec4 vScreenPos;
     #ifdef ENVCUBEMAP
         varying vec3 vReflectionVec;
     #endif
-    #if defined(LIGHTMAP) || defined(AO)
+    #if defined(LIGHTMAP) || defined(AO) || defined(BAKE)
         varying vec2 vTexCoord2;
     #endif
 #endif
 
-//=============================================================================
-//=============================================================================
-#line 2000
 void VS()
 {
     mat4 modelMatrix = iModelMatrix;
@@ -83,9 +84,14 @@ void VS()
         #ifdef POINTLIGHT
             vCubeMaskVec = (worldPos - cLightPos.xyz) * mat3(cLightMatrices[0][0].xyz, cLightMatrices[0][1].xyz, cLightMatrices[0][2].xyz);
         #endif
+
+        #ifdef BAKE
+            vTexCoord2 = iTexCoord1;
+        #endif
+
     #else
         // Ambient & per-vertex lighting
-        #if defined(LIGHTMAP) || defined(AO)
+        #if defined(LIGHTMAP) || defined(AO) || defined(BAKE)
             // If using lightmap, disregard zone ambient light
             // If using AO, calculate ambient in the PS
             vVertexLight = vec3(0.0, 0.0, 0.0);
@@ -108,10 +114,9 @@ void VS()
 
     // bake
     #ifdef BAKE
-    vec2 texEnc = vTexCoord.xy * 2 - vec2(1);
+    vec2 texEnc = vTexCoord2.xy * 2 - vec2(1);
     gl_Position = vec4(texEnc, 0.5, 1);
     #endif
-
 }
 
 void PS()

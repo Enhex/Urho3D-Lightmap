@@ -72,10 +72,10 @@ void LightmapCreator::GenerateLightmaps()
     }
 
     // 1st step
-    lightmapState_ = LightMap_DirectLight;
+    lightmapState_ = LightMap_BakeDirectLight;
 
     ParseModelsInScene();
-    QueueNodesForDirectLightBaking();
+    QueueNodesForLightBaking();
 
     SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(LightmapCreator, HandleUpdate));
     SubscribeToEvent(E_DIRECTLIGHTINGDONE, URHO3D_HANDLER(LightmapCreator, HandleDirectLightBuildEvent));
@@ -85,7 +85,7 @@ void LightmapCreator::HandleUpdate(StringHash eventType, VariantMap& eventData)
 {
     switch (lightmapState_)
     {
-    case LightMap_DirectLight:
+    case LightMap_BakeDirectLight:
         if (numProcessed_ == totalCnt_)
         {
             lightmapState_ = LightMap_IndirectLightBegin;
@@ -116,13 +116,20 @@ void LightmapCreator::HandleUpdate(StringHash eventType, VariantMap& eventData)
             for ( unsigned i = 0; i < origNodeList_.Size(); ++i )
             {
                 Lightmap *lightmap = origNodeList_[i]->GetComponent<Lightmap>();
-                lightmap->SwatToLightmapTechnique();
+                lightmap->SwitchToLightmapTechnique();
             }
-            lightmapState_ = LightMap_RestoreScene;
+
+            // setup for indirect baking - change state prior to calling the below fn
+            lightmapState_ = LightMap_BakeIndirectLight;
+            SetupBakeIndirectProcess();
         }
         break;
 
-    case LightMap_DilateTextures:
+    case LightMap_BakeIndirectLight:
+        if (numProcessed_ == totalCnt_)
+        {
+            lightmapState_ = LightMap_RestoreScene;
+        }
         break;
 
     case LightMap_RestoreScene:
@@ -202,14 +209,38 @@ void LightmapCreator::SetupIndirectProcess()
 
 }
 
-void LightmapCreator::QueueNodesForDirectLightBaking()
+void LightmapCreator::SetupBakeIndirectProcess()
+{
+    numProcessed_ = 0;
+    buildRequiredNodeList_.Resize(origNodeList_.Size());
+    processingNodeList_.Clear();
+
+    for ( unsigned i = 0; i < origNodeList_.Size(); ++i )
+    {
+        Lightmap *lightmap = origNodeList_[i]->GetComponent<Lightmap>();
+        lightmap->InitModelSetting(ViewMask_Default);
+
+        buildRequiredNodeList_[i] = origNodeList_[i];
+    }
+
+    QueueNodesForLightBaking();
+}
+
+void LightmapCreator::QueueNodesForLightBaking()
 {
     // only bake one direct light at a time
     while (buildRequiredNodeList_.Size() && processingNodeList_.Size() < 1)
     {
         Node* node = buildRequiredNodeList_[0];
 
-        BakeDirectLight(node);
+        if (lightmapState_ == LightMap_BakeDirectLight)
+        {
+            BakeDirectLight(node);
+        }
+        else
+        {
+            BakeIndirectLight(node);
+        }
 
         processingNodeList_.Push(node);
         buildRequiredNodeList_.Erase(0);
@@ -237,6 +268,12 @@ void LightmapCreator::BakeDirectLight(Node *node)
     lightmap->BakeDirectLight(outputPath_);
 }
 
+void LightmapCreator::BakeIndirectLight(Node *node)
+{
+    Lightmap *lightmap = node->GetComponent<Lightmap>();
+    lightmap->BakeIndirectLight(outputPath_);
+}
+
 void LightmapCreator::RemoveCompletedNode(Node *node)
 {
     if (processingNodeList_.Remove(node))
@@ -249,7 +286,7 @@ void LightmapCreator::RemoveCompletedNode(Node *node)
 
     if (numProcessed_ != totalCnt_)
     {
-        QueueNodesForDirectLightBaking();
+        QueueNodesForLightBaking();
     }
     else
     {
