@@ -18,9 +18,15 @@ I've applied the same changes to the hlsl shader, and for some reason, I only ge
 ---
 ### Screenshots
 
-![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/bakescene.png)
-#### Generated Textures
-![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/bakedtextures.png)
+![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/bakescene.png)  
+
+#### Direct Lighting Textures
+![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/bakedtextures.png)  
+
+#### Indirect Lighting Textures
+Shown shaded with DiffLightMap and NoTextureLightMap techniques.
+![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/indirect1.png)  
+![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/indirect2.png)  
 
 ---
 ### To Build
