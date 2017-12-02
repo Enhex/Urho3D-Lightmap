@@ -55,4 +55,5 @@ protected:
 
 protected:
     WeakPtr<Text> textProcessStatus_;
+    bool startLightmapProcess_;
 };

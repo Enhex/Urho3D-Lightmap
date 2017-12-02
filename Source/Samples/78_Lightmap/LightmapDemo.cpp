@@ -51,8 +51,9 @@ URHO3D_DEFINE_APPLICATION_MAIN(LightmapDemo)
 
 //=============================================================================
 //=============================================================================
-LightmapDemo::LightmapDemo(Context* context) :
-    Sample(context)
+LightmapDemo::LightmapDemo(Context* context)
+    : Sample(context)
+    , startLightmapProcess_(false)
 {
 }
 
@@ -111,12 +112,7 @@ void LightmapDemo::CreateScene()
 
 void LightmapDemo::CreateLightmapCreator()
 {
-    LightmapCreator *lightmapCreator;
-    context_->RegisterSubsystem((lightmapCreator = new LightmapCreator(context_)));
-
-    String outputPath = GetSubsystem<FileSystem>()->GetProgramDir() + String("/Data/Lightmap/BakedTextures/");
-    lightmapCreator->Init(scene_, outputPath);
-    lightmapCreator->GenerateLightmaps();
+    context_->RegisterSubsystem(new LightmapCreator(context_));
 }
 
 void LightmapDemo::CreateInstructions()
@@ -126,7 +122,7 @@ void LightmapDemo::CreateInstructions()
 
     // Construct new Text object, set string to display and font to use
     Text* instructionText = ui->GetRoot()->CreateChild<Text>();
-    instructionText->SetText("Use WASD keys and mouse/touch to move");
+    instructionText->SetText("Use WASD keys and mouse/touch to move\nF5 to start lightmap process");
     instructionText->SetFont(cache->GetResource<Font>("Fonts/Anonymous Pro.ttf"), 12);
     instructionText->SetColor(Color::CYAN);
 
@@ -228,9 +224,21 @@ void LightmapDemo::HandleUpdate(StringHash eventType, VariantMap& eventData)
 {
     using namespace Update;
 
+    Input* input = GetSubsystem<Input>();
+
     // Take the frame time step, which is stored as a float
     float timeStep = eventData[P_TIMESTEP].GetFloat();
 
     // Move the camera, scale movement with time step
     MoveCamera(timeStep);
+
+    if (input->GetKeyDown(KEY_F5) && !startLightmapProcess_)
+    {
+        String outputPath = GetSubsystem<FileSystem>()->GetProgramDir() + String("/Data/Lightmap/BakedTextures/");
+        LightmapCreator *lightmapCreator = GetSubsystem<LightmapCreator>();
+        lightmapCreator->Init(scene_, outputPath);
+        lightmapCreator->GenerateLightmaps();
+
+        startLightmapProcess_ = true;
+    }
 }
