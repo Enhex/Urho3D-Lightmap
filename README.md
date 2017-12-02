@@ -8,7 +8,7 @@ Generates textures on texCoord2:
 * indirect lighting
 
 #### OpenGL Only
-I've applied the same changes to the hlsl shader, and for some reason, I only get black images from the view capture. I will not be pursuing this fix but it's fully implementation using OpenGL.
+I've applied the same changes to the hlsl shader, and for some reason, I only get black images from the view capture. I will not be pursuing this fix but it's fully implementated using OpenGL.
 
 ---  
 ### Setup:
