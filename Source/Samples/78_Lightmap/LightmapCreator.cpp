@@ -152,7 +152,6 @@ unsigned LightmapCreator::ParseModelsInScene()
             // create lightmap component and init model settings required for baking process
             Lightmap *lightmap = result[i]->CreateComponent<Lightmap>();
             lightmap->InitModelSetting(ViewMask_Default);
-            lightmap->SetSavefile(false);
 
             origNodeList_.Push(result[i]);
             buildRequiredNodeList_.Push(result[i]);
