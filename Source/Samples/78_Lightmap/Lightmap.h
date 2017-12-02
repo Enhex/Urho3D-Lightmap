@@ -23,6 +23,7 @@
 #pragma once
 
 #include <Urho3D/Scene/Component.h>
+#include <Urho3D/Core/HelperThread.h>
 
 using namespace Urho3D;
 namespace Urho3D
@@ -39,19 +40,36 @@ class Viewport;
 
 //=============================================================================
 //=============================================================================
-URHO3D_EVENT(E_LIGTHMAPDONE, LightmapDone)
+URHO3D_EVENT(E_DIRECTLIGHTINGDONE, DirectLightmapDone)
 {
     URHO3D_PARAM(P_NODE, Node);      // node ptr
 }
+
+URHO3D_EVENT(E_TRIANGLEINFO, TriangleInfo)
+{
+    URHO3D_PARAM(P_TRICNT, TriCnt);  // unsigned
+}
+
+URHO3D_EVENT(E_TRIANGLECOMPLETED, TriangleCompleted)
+{
+    //URHO3D_PARAM(P_TRICNT, TriCnt);  // unsigned
+}
+
+URHO3D_EVENT(E_INDIRECTCOMPLETED, IndirectCompleted)
+{
+    URHO3D_PARAM(P_NODE, Node);      // node ptr
+}
+
 //=============================================================================
 //=============================================================================
 enum ViewMaskType
 {
-    ViewMask_Normal  = (1 << 0),
+    ViewMask_Default = (1 << 0),
     ViewMask_Capture = (1 << 7),
 };
 
 const unsigned DEFAULT_IMAGE_SIZE = 512;
+const unsigned DEFAULT_INDIRECT_IMAGE_SIZE = 64;
 
 //=============================================================================
 //=============================================================================
@@ -65,19 +83,45 @@ public:
     
     static void RegisterObject(Context* context);
 
-    void BakeTexture(const String &filepath, unsigned imageSize=DEFAULT_IMAGE_SIZE);
+    bool InitModelSetting(unsigned tempViewMask);
+    bool RestoreModelSetting();
+    void BakeDirectLight(const String &filepath, unsigned imageSize=DEFAULT_IMAGE_SIZE);
+    void BeginIndirectLighting(const String &filepath, unsigned imageSize=DEFAULT_INDIRECT_IMAGE_SIZE);
+    void SwatToLightmapTechnique();
+
+    void SetSavefile(bool bset)                     { saveFile_ =  bset; }
+    bool GetSavefile() const                        { return saveFile_; }
+
+    const SharedPtr<Image>& GetDirectLightImage() const { return directLightImage_; }
 
 protected:
-    void InitRenderSurface(const BoundingBox& worldBoundingBox);
-    void HandlePostRender(StringHash eventType, VariantMap& eventData);
-    void RestoreStaticModel();
-    void SendMsg();
+    void InitDirectLightSettings(const BoundingBox& worldBoundingBox);
+    void InitIndirectLightSettings();
+    void HandleUpdate(StringHash eventType, VariantMap& eventData);
+    void HandlePostRenderDirectLighting(StringHash eventType, VariantMap& eventData);
+    void HandlePostRenderIndirectLighting(StringHash eventType, VariantMap& eventData);
+    void RestoreTempViewMask();
+    void SendDirectLightMsg();
     void Stop();
     void OutputFile();
+
+    unsigned GetState();
+    void SetState(unsigned state);
+    void SetupGeomData();
+    void SetupPixelData();
+    void ForegroundProcess();
+    void BackgroundBuildPixelData(void *data);
+    void SendTriangleInfoMsg();
+    void SendTriangleCompleteMsg();
+    void SendIndirectCompleteMsg();
+    void SetCameraPosRotForCapture();
 
 protected:
     WeakPtr<StaticModel>    staticModel_;
     SharedPtr<Material>     origMaterial_;
+    unsigned                origViewMask_;
+    unsigned                tempViewMask_;
+
     String                  filepath_;
 
     WeakPtr<Node>           camNode_;
@@ -85,9 +129,98 @@ protected:
     SharedPtr<Viewport>     viewport_;
     SharedPtr<Texture2D>    renderTexture_;
     WeakPtr<RenderSurface>  renderSurface_;
-    SharedPtr<Image>        renderedImage_;
+    SharedPtr<Image>        directLightImage_;
+    SharedPtr<Image>        indirectLightImage_;
+    float                   solidangle_;
 
     unsigned                texWidth_;
     unsigned                texHeight_;
     bool                    saveFile_;
+
+    Mutex                   mutexStateLock_;
+    Mutex                   mutexSurfImageLock_;
+    unsigned                stateProcess_;
+    unsigned                curPixelIdx_;
+    Timer                   timerIndirect_;
+
+    SharedPtr<HelperThread<Lightmap> > threadProcess_;
+
+private:
+    enum StateType
+    {
+        State_UnInit,
+        State_DirectLight,
+        State_CreateGeomData,
+        State_CreatePixelData,
+        State_IndirectLightSetup,
+        State_IndirectLightBegin,
+        State_IndirectLightProcess,
+        State_IndirectLightEnd
+    };
+
+    struct GeomData
+    {
+        Vector3 pos_;
+        Vector3 normal_;
+        Vector2 uv_;
+    };
+    struct PixelPoint
+    {
+        unsigned triIdx_;
+        Vector3  pos_;
+        Vector3  normal_;
+        Vector2  uv_;
+        Color    col_;
+    };
+
+    PODVector<GeomData> geomData_;
+    PODVector<PixelPoint> pixelData_;
+    SharedArrayPtr<unsigned short> indexBuffShort_;
+    SharedArrayPtr<unsigned> indexBuff_;
+    unsigned numIndices_;
+    unsigned indexSize_;
+
+    //=============================================================================
+    // http://answers.unity3d.com/questions/383804/calculate-uv-coordinates-of-3d-point-on-plane-of-m.html
+    // describes a barycentric calculation for 3D using proportional area calculation
+    //=============================================================================
+    static inline Vector3 Barycentric(const Vector2 &v0, const Vector2 &v1, const Vector2 &v2, const Vector2 &vp)
+    {
+        Vector3 bary(Vector3::ONE);
+        float area = CrossProduct(v1 - v0, v2 - v0);
+
+        if (area > M_EPSILON)
+        {
+            // edge seg
+            Vector2 e0 = v0 - vp;
+            Vector2 e1 = v1 - vp;
+            Vector2 e2 = v2 - vp;
+
+            // the subscripts a0, a1, and a2 are derived 
+            // from the opposite subscripts of e0, e1, and e2
+            float a0 = CrossProduct(e1, e2) / area;
+            float a1 = CrossProduct(e2, e0) / area;
+            float a2 = CrossProduct(e0, e1) / area;
+
+            bary = Vector3(a0, a1, a2);
+        }
+
+        return bary;
+    }
+
+    // missing in Urh3D::Vector2
+    static inline float CrossProduct(const Vector2 &a, const Vector2 &b)
+    {
+        return Abs(a.x_ * b.y_ - a.y_ * b.x_);
+    }
+
+    //=============================================================================
+    // **note: proportinal comparator - the sum of the three segment areas is equal to the area of triangle, 
+    // hence you can also prove that the sum of the barycentric is equal to one, if it's inside the triangle
+    //=============================================================================
+    static inline bool BaryInsideTriangle(const Vector3 &bary)
+    {
+        return (bary.x_ + bary.y_ + bary.z_) < (1.0f + M_EPSILON);
+    }
+
 };

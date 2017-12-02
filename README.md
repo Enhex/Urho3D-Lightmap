@@ -3,8 +3,9 @@
 ---
 ### Description
 Lightmap texture baking sample.  
-Currently, this implementation is written more like a texture baker. It generates direct lighting textures and does not look for the second UV texCoordinates as expected by the Urho3D lightmap shader.  
-There is no GI implemented as yet.
+Generates textures on texCoord2:
+* direct lighting textures
+* indirect lighting
 
 #### OpenGL Only
 I've applied the same changes to the hlsl shader, and for some reason, I only get black images from the view capture. I will not be pursuing this fix but will continue with the full implementation using OpenGL.
@@ -12,7 +13,6 @@ I've applied the same changes to the hlsl shader, and for some reason, I only ge
 ---  
 ### Setup:
 * only one direct lightmap texture can be generated at a time, otherwise, the captured view images result in inaccuracies.
-* all static models in the scene must have **ViewMask set to 0x01** (soon to be absolete).
 * output files are placed in the **Lightmap/BakedTextures** folder.
   
 ---

@@ -27,6 +27,7 @@ using namespace Urho3D;
 namespace Urho3D
 {
 class Scene;
+class StaticModel;
 }
 
 class Lightmap;
@@ -35,8 +36,16 @@ class Lightmap;
 //=============================================================================
 URHO3D_EVENT(E_LIGHTMAPSTATUS, LightmapStatus)
 {
-    URHO3D_PARAM(P_TOTAL, TotalCnt);        // total count
-    URHO3D_PARAM(P_COMPLETED, CompleteCnt); // complete count
+    URHO3D_PARAM(P_TOTAL, TotalCnt);        // unsigned
+    URHO3D_PARAM(P_COMPLETED, CompleteCnt); // unsigned
+}
+
+URHO3D_EVENT(E_INDIRECTLIGHTSTATUS, IndirectLightStatus)
+{
+    URHO3D_PARAM(P_TITLE, Title);           // String
+    URHO3D_PARAM(P_TOTAL, TotalCnt);        // unsigned
+    URHO3D_PARAM(P_COMPLETED, CompleteCnt); // unsigned
+    URHO3D_PARAM(P_REMOVEMSG, RemoveMsg);   // bool
 }
 
 //=============================================================================
@@ -53,16 +62,28 @@ public:
     void GenerateLightmaps();
 
 protected:
+    void CreateTechniquesToAvoidList();
     unsigned ParseModelsInScene();
-    void QueueNodeProcess();
-    void StartLightmapBuild(Node *node);
+    bool HasTexCoord2(StaticModel *staticModel);
+    void SetupIndirectProcess();
+    void QueueNodesForDirectLightBaking();
+    void QueueNodesForIndirectLightProcess();
+
+    void BakeDirectLight(Node *node);
     void RemoveCompletedNode(Node *node);
     void SendEventMsg();
-    void HandleBuildEvent(StringHash eventType, VariantMap& eventData);
+    void RestoreModelSettigs();
+    void HandleUpdate(StringHash eventType, VariantMap& eventData);
+    void HandleDirectLightBuildEvent(StringHash eventType, VariantMap& eventData);
+    void SendIndirectLightingStatus(bool removemsg=false);
+    void HandleTriangleInfoEvent(StringHash eventType, VariantMap& eventData);
+    void HandleTriangleCompletedEvent(StringHash eventType, VariantMap& eventData);
+    void HandleIndirectCompletedEvent(StringHash eventType, VariantMap& eventData);
 
 protected:
-    WeakPtr<Scene> scene_;
+    SharedPtr<Scene> scene_;
     String outputPath_;
+    Color origFogColor_;
 
     PODVector<Node*> buildRequiredNodeList_;
     PODVector<Node*> origNodeList_;
@@ -71,6 +92,27 @@ protected:
     unsigned totalCnt_;
     unsigned numProcessed_;
     unsigned maxThreads_;
+
+    // state
+    unsigned lightmapState_;
+
+    // status
+    unsigned totalTriangleCnt_;
+    unsigned trianglesCompleted_;
+    unsigned numObjectsCompletedIndirect_;
+
+private:
+    enum LightMapState
+    {
+        LightMap_UnInit,
+        LightMap_DirectLight,
+        LightMap_IndirectLightBegin,
+        LightMap_IndirectLightProcessing,
+        LightMap_SwapToLightmapTexture,
+        LightMap_DilateTextures,
+        LightMap_RestoreScene,
+        LightMap_Complete,
+    };
 };
 
 

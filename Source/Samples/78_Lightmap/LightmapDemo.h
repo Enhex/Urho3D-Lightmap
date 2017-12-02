@@ -47,13 +47,12 @@ protected:
     void CreateScene();
     void CreateLightmapCreator();
     void CreateInstructions();
-    void SetupViewport();
     void SubscribeToEvents();
     void ChangeDebugHudText();
     void MoveCamera(float timeStep);
+    void HandleLightingStatus(StringHash eventType, VariantMap& eventData);
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
 
 protected:
-    SharedPtr<Scene> rttScene_;
-    SharedPtr<Node> rttCameraNode_;
+    WeakPtr<Text> textProcessStatus_;
 };

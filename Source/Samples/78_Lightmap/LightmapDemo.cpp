@@ -133,6 +133,13 @@ void LightmapDemo::CreateInstructions()
     // Position the text relative to the screen center
     instructionText->SetHorizontalAlignment(HA_CENTER);
     instructionText->SetPosition(0, 10);
+
+    textProcessStatus_ = ui->GetRoot()->CreateChild<Text>();
+    //textProcessStatus_->SetText("Use WASD keys and mouse/touch to move");
+    textProcessStatus_->SetFont(cache->GetResource<Font>("Fonts/Anonymous Pro.ttf"), 12);
+    textProcessStatus_->SetColor(Color::YELLOW);
+    //textProcessStatus_->SetHorizontalAlignment(HA_CENTER);
+    textProcessStatus_->SetPosition(20, 50);
 }
 
 void LightmapDemo::ChangeDebugHudText()
@@ -195,6 +202,26 @@ void LightmapDemo::SubscribeToEvents()
 {
     // Subscribe HandleUpdate() function for processing update events
     SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(LightmapDemo, HandleUpdate));
+    SubscribeToEvent(E_INDIRECTLIGHTSTATUS, URHO3D_HANDLER(LightmapDemo, HandleLightingStatus));
+}
+
+void LightmapDemo::HandleLightingStatus(StringHash eventType, VariantMap& eventData)
+{
+    using namespace IndirectLightStatus;
+
+    String title = eventData[P_TITLE].GetString();
+    unsigned total = eventData[P_TOTAL].GetUInt();
+    unsigned complete = eventData[P_COMPLETED].GetUInt();
+    bool removemsg = eventData[P_REMOVEMSG].GetBool();
+
+    if (!removemsg)
+    {
+        textProcessStatus_->SetText(title + ToString("%u/%u", complete, total));
+    }
+    else
+    {
+        textProcessStatus_->SetText("");
+    }
 }
 
 void LightmapDemo::HandleUpdate(StringHash eventType, VariantMap& eventData)
