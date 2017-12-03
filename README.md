@@ -9,7 +9,7 @@ Generates textures on texCoord2:
 * generated lightmaps
 * indirect baked lighting
 
-**Note:** baked textured are generated via GPU.
+**Note:** baked textures are generated via GPU.
 
 #### OpenGL Only
 I've applied the same changes to the hlsl shader, and for some reason, I only get black images from the view capture. I will not be pursuing this fix but it's fully implementated using OpenGL.
@@ -27,7 +27,7 @@ I've applied the same changes to the hlsl shader, and for some reason, I only ge
 ![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/directonly2.png)  
 
 #### Direct and Indirect Lighting
-**Shown shaded with DiffLightMap and NoTextureLightMap techniques.**
+*Shown shaded with DiffLightMap and NoTextureLightMap techniques.*
 ![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/indirect1.png)  
 ![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/indirect2.png)  
   
