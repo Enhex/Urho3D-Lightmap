@@ -12,7 +12,7 @@ Generates textures on texCoord2:
 **Note:** baked textures are generated via GPU.
 
 #### OpenGL Only
-I've applied the same changes to the hlsl shader, and for some reason, I only get black images from the view capture. I will not be pursuing this fix but it's fully implementated using OpenGL.
+I've applied the same changes to the hlsl shader, and for some reason, I only get black images from the view capture. I will not be pursuing this fix but it's fully implemented using OpenGL.
 
 ---  
 ### Setup:
