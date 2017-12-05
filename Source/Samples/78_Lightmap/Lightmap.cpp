@@ -47,11 +47,18 @@
 #include "Lightmap.h"
 
 #include <Urho3D/DebugNew.h>
-
 //=============================================================================
 //=============================================================================
 void ImageSmooth(SharedPtr<Image> image, SharedPtr<Image> outImage);
 void ImageDilate(SharedPtr<Image> image, SharedPtr<Image> outImage);
+
+//=============================================================================
+//=============================================================================
+#define FIXED_INDIRECT_TEXSIZE      64
+
+// turn this on if you are rendering 256x256 or larger lightmaps, 
+// it's not all that significant for lower resolutions
+#define SOLIDANGLE_COLOR_THREADED
 
 //=============================================================================
 //=============================================================================
@@ -67,6 +74,9 @@ Lightmap::Lightmap(Context* context)
 
 Lightmap::~Lightmap()
 {
+    threadProcess_ = NULL;
+
+    indirectDataList_.Clear();
 }
 
 void Lightmap::RegisterObject(Context* context)
@@ -161,7 +171,7 @@ void Lightmap::BeginIndirectLighting(const String &filepath, unsigned imageSize)
         // 360       = 4 * pi and 
         // M_MAX_FOV = x * pi 
         const float x = M_MAX_FOV * 4.0f/360.0f;
-        solidangle_ = x * M_PI /(float)(imageSize * imageSize);
+        solidangle_ = x * M_PI /(float)(FIXED_INDIRECT_TEXSIZE * FIXED_INDIRECT_TEXSIZE);
 
         // state change
         SetState(State_CreateGeomData);
@@ -244,7 +254,7 @@ void Lightmap::InitBakeLightSettings(const BoundingBox& worldBoundingBox)
 
     // set campos right at the model
     Vector3 halfSize = worldBoundingBox.HalfSize();
-    camNode_->SetWorldPosition(worldBoundingBox.Center() - Vector3(0, 0, halfSize.z_ ));
+    camNode_->SetWorldPosition(worldBoundingBox.Center() - Vector3(0, 0, halfSize.z_));
 
     camera_ = camNode_->CreateComponent<Camera>();
     camera_->SetFov(90.0f);
@@ -287,7 +297,9 @@ void Lightmap::InitIndirectLightSettings()
     // Construct render surface 
     renderTexture_ = new Texture2D(context_);
     renderTexture_->SetNumLevels(1);
-    renderTexture_->SetSize(texWidth_, texHeight_, Graphics::GetRGBAFormat(), TEXTURE_RENDERTARGET);
+
+    //**note** indirect capture texture size is fixed to 64x64
+    renderTexture_->SetSize(FIXED_INDIRECT_TEXSIZE, FIXED_INDIRECT_TEXSIZE, Graphics::GetRGBAFormat(), TEXTURE_RENDERTARGET);
     renderTexture_->SetFilterMode(FILTER_BILINEAR);
     
     renderSurface_ = renderTexture_->GetRenderSurface();
@@ -349,6 +361,32 @@ void Lightmap::ForegroundProcess()
             SubscribeToEvent(E_ENDFRAME, URHO3D_HANDLER(Lightmap, HandlePostRenderIndirectLighting));
 
             SetState(State_IndirectLightProcess);
+
+            #ifdef SOLIDANGLE_COLOR_THREADED
+            // reserve a few spaces
+            indirectDataList_.Reserve(10);
+
+            // start background process
+            threadProcess_ = new HelperThread<Lightmap>(this, &Lightmap::BackgroundProcessIndirectImage);
+            threadProcess_->Start();
+            #endif
+        }
+        break;
+
+    case State_IndirectLightWaitBackground:
+        {
+            #ifdef SOLIDANGLE_COLOR_THREADED
+            unsigned idx;
+            if (GetFrontIndirectQueueImage(idx) == NULL)
+            {
+                FinalizeIndirectImage();
+
+                // kill thread
+                threadProcess_ = NULL;
+
+                SetState(State_IndirectLightEnd);
+            }
+            #endif
         }
         break;
     }
@@ -468,6 +506,132 @@ void Lightmap::HandlePostRenderBakeLighting(StringHash eventType, VariantMap& ev
     SendDirectLightMsg();
 }
 
+void Lightmap::BackgroundProcessIndirectImage(void *data)
+{
+    Lightmap *lightmap = (Lightmap*)data;
+    unsigned idx;
+    SharedPtr<Image> image = lightmap->GetFrontIndirectQueueImage(idx);
+
+    while (image)
+    {
+        lightmap->CalculateSolidAngleColor(idx, image);
+        lightmap->PopFrontIndirectQueueIdx();
+        image = lightmap->GetFrontIndirectQueueImage(idx);
+    }
+}
+
+void Lightmap::QueueIndirectImage(unsigned idx, SharedPtr<Image> image)
+{
+    MutexLock lock(mutexIndirectQueueLock_);
+
+    indirectDataList_.Resize(indirectDataList_.Size() + 1);
+    IndirectData &indirectData = indirectDataList_[indirectDataList_.Size() - 1];
+
+    indirectData.image_ = new Image(context_);
+    indirectData.image_->SetSize(image->GetWidth(), image->GetHeight(), 4);
+    indirectData.image_->SetData(image->GetData());
+    indirectData.idx_ = idx;
+}
+
+SharedPtr<Image> Lightmap::GetFrontIndirectQueueImage(unsigned &idx)
+{
+    MutexLock lock(mutexIndirectQueueLock_);
+
+    SharedPtr<Image> image;
+    if (indirectDataList_.Size() > 0)
+    {
+        idx = indirectDataList_[0].idx_;
+        image = indirectDataList_[0].image_;
+    }
+    return image;
+}
+
+void Lightmap::PopFrontIndirectQueueIdx()
+{
+    MutexLock lock(mutexIndirectQueueLock_);
+
+    if (indirectDataList_.Size() > 0)
+    {
+        indirectDataList_.Erase(0);
+    }
+}
+
+void Lightmap::CalculateSolidAngleColor(unsigned idx, SharedPtr<Image> srcImage)
+{
+    pixelData_[idx].col_ = Color::TRANSPARENT;
+    for ( int y = 0; y < srcImage->GetHeight(); ++y )
+    {
+        for ( int x = 0; x < srcImage->GetWidth(); ++x )
+        {
+            pixelData_[idx].col_ += srcImage->GetPixel(x, y);
+        }
+    }
+    pixelData_[idx].col_ = pixelData_[idx].col_ * solidangle_;
+}
+
+void Lightmap::FinalizeIndirectImage()
+{
+    float elapsed = (float)((long)timerIndirect_.GetMSec(false))/1000.0f;
+    char buff[20];
+    sprintf(buff, "%.2f sec.", elapsed);
+    URHO3D_LOGINFO(ToString("node%u: indirect completion = ", node_->GetID()) + String(buff));
+
+    // write final image
+    indirectLightImage_ = new Image(context_);
+    indirectLightImage_->SetSize(texWidth_, texHeight_, 4);
+    indirectLightImage_->Clear(Color::TRANSPARENT);
+    for ( unsigned i = 0; i < pixelData_.Size(); ++i )
+    {
+        indirectLightImage_->SetPixel(pixelData_[i].iuv_.x_, pixelData_[i].iuv_.y_, pixelData_[i].col_);
+    }
+
+    // smooth and dilate
+    SmoothAndDilate(indirectLightImage_);
+
+    // requires save, ignore savefile flag
+    String name = ToString("node%u_lightmap.png", node_->GetID());
+    String path = filepath_ + name;
+    indirectLightImage_->SavePNG(path);
+
+    // send msgs
+    SendTriangleCompleteMsg();
+    SendIndirectCompleteMsg();
+}
+
+void Lightmap::ProcessIndirectRenderSurface()
+{
+    #ifdef SOLIDANGLE_COLOR_THREADED
+    QueueIndirectImage(curPixelIdx_, renderTexture_->GetImage());
+    #else
+    CalculateSolidAngleColor(curPixelIdx_, renderTexture_->GetImage());
+    #endif
+
+    // check tri complete
+    unsigned prevTriIdx = pixelData_[curPixelIdx_].triIdx_;
+
+    if (++curPixelIdx_ >= pixelData_.Size())
+    {
+        Stop();
+
+        #ifdef SOLIDANGLE_COLOR_THREADED
+        SetState(State_IndirectLightWaitBackground);
+        #else
+        FinalizeIndirectImage();
+        #endif
+    }
+    else
+    {
+        SetCameraPosRotForCapture();
+
+        // send tri complete msg
+        unsigned nextTriIdx = pixelData_[curPixelIdx_].triIdx_;
+        if (nextTriIdx != prevTriIdx)
+        {
+            SendTriangleCompleteMsg();
+        }
+    }
+}
+
 void Lightmap::SmoothAndDilate(SharedPtr<Image> inImage, bool dilate)
 {
     SharedPtr<Image> outImage(new Image(context_));
@@ -488,63 +652,8 @@ void Lightmap::SmoothAndDilate(SharedPtr<Image> inImage, bool dilate)
 
 void Lightmap::HandlePostRenderIndirectLighting(StringHash eventType, VariantMap& eventData)
 {
-    // get image
-    indirectLightImage_ = renderTexture_->GetImage();
-
-    // average color
-    pixelData_[curPixelIdx_].col_ = Color::TRANSPARENT;
-    for ( int y = 0; y < indirectLightImage_->GetHeight(); ++y )
-    {
-        for ( int x = 0; x < indirectLightImage_->GetWidth(); ++x )
-        {
-            pixelData_[curPixelIdx_].col_ += indirectLightImage_->GetPixel(x, y);
-        }
-    }
-    pixelData_[curPixelIdx_].col_ = pixelData_[curPixelIdx_].col_ * solidangle_;
-
-    // check tri complete
-    unsigned prevTriIdx = pixelData_[curPixelIdx_].triIdx_;
-
-    if (++curPixelIdx_ >= pixelData_.Size())
-    {
-        Stop();
-        SetState(State_IndirectLightEnd);
-
-        float elapsed = (float)((long)timerIndirect_.GetMSec(false))/1000.0f;
-        char buff[20];
-        sprintf(buff, "%.2f sec.", elapsed);
-        URHO3D_LOGINFO(ToString("node%u: indirect completion = ", node_->GetID()) + String(buff));
-
-        // write final image
-        indirectLightImage_->Clear(Color::TRANSPARENT);
-        for ( unsigned i = 0; i < pixelData_.Size(); ++i )
-        {
-            indirectLightImage_->SetPixel(pixelData_[i].iuv_.x_, pixelData_[i].iuv_.y_, pixelData_[i].col_);
-        }
-
-        // smooth and dilate
-        SmoothAndDilate(indirectLightImage_);
-
-        // requires save, ignore savefile flag
-        String name = ToString("node%u_lightmap.png", node_->GetID());
-        String path = filepath_ + name;
-        indirectLightImage_->SavePNG(path);
-
-        // send msgs
-        SendTriangleCompleteMsg();
-        SendIndirectCompleteMsg();
-    }
-    else
-    {
-        SetCameraPosRotForCapture();
-
-        // send tri complete msg
-        unsigned nextTriIdx = pixelData_[curPixelIdx_].triIdx_;
-        if (nextTriIdx != prevTriIdx)
-        {
-            SendTriangleCompleteMsg();
-        }
-    }
+    // process render surface
+    ProcessIndirectRenderSurface();
 }
 
 void Lightmap::SetupGeomData()
@@ -679,14 +788,12 @@ void Lightmap::SetupPixelData()
         const int pixMaxY = (int)Min((float)ceil(yMax*texSizeY)+1, (float)texSizeY);
 
         Vector3 point, normal, bary;
-        Vector2 uv;
 
         for ( int x = pixMinX; x < pixMaxX; ++x ) 
         {
             for ( int y = pixMinY; y < pixMaxY; ++y ) 
             {
-                uv = Vector2((float)x * texSizeXINV, (float)y * texSizeYINV);
-                bary = Barycentric(uv0, uv1, uv2, uv);
+                bary = Barycentric(uv0, uv1, uv2, Vector2((float)x * texSizeXINV, (float)y * texSizeYINV));
 
                 if (BaryInsideTriangle(bary))
                 {

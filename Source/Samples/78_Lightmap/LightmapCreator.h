@@ -94,7 +94,7 @@ protected:
 
     unsigned totalCnt_;
     unsigned numProcessed_;
-    unsigned maxThreads_;
+    unsigned maxNodesToProcess_;
 
     // state
     unsigned lightmapState_;

@@ -45,7 +45,7 @@ LightmapCreator::LightmapCreator(Context* context)
     : Object(context)
     , totalCnt_(0)
     , numProcessed_(0)
-    , maxThreads_(8)
+    , maxNodesToProcess_(8)
     , lightmapState_(LightMap_UnInit)
 {
     Lightmap::RegisterObject(context);
@@ -159,6 +159,7 @@ unsigned LightmapCreator::ParseModelsInScene()
             // create lightmap component and init model settings required for baking process
             Lightmap *lightmap = result[i]->CreateComponent<Lightmap>();
             lightmap->InitModelSetting(ViewMask_Default);
+            //lightmap->SetSavefile(false);
 
             origNodeList_.Push(result[i]);
             buildRequiredNodeList_.Push(result[i]);
@@ -206,7 +207,6 @@ void LightmapCreator::SetupIndirectProcess()
     }
 
     QueueNodesForIndirectLightProcess();
-
 }
 
 void LightmapCreator::SetupBakeIndirectProcess()
@@ -249,12 +249,14 @@ void LightmapCreator::QueueNodesForLightBaking()
 
 void LightmapCreator::QueueNodesForIndirectLightProcess()
 {
-    // only bake one direct light at a time
-    while (buildRequiredNodeList_.Size() && processingNodeList_.Size() < maxThreads_)
+    // limit max nodes to process at once
+    while (buildRequiredNodeList_.Size() && processingNodeList_.Size() < maxNodesToProcess_)
     {
         Node* node = buildRequiredNodeList_[0];
 
         Lightmap *lightmap = node->GetComponent<Lightmap>();
+
+        // specify lightmap resolution - e.g. BeginIndirectLighting(outputPath_, 128), default = 64
         lightmap->BeginIndirectLighting(outputPath_);
 
         processingNodeList_.Push(node);

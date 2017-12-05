@@ -90,10 +90,8 @@ public:
     void SwitchToLightmapTechnique();
     void BakeIndirectLight(const String &filepath, unsigned imageSize=DEFAULT_IMAGE_SIZE);
 
-    void SetSavefile(bool bset)                     { saveFile_ =  bset; }
-    bool GetSavefile() const                        { return saveFile_; }
-
-    const SharedPtr<Image>& GetDirectLightImage() const { return directLightImage_; }
+    void SetSavefile(bool bset) { saveFile_ =  bset; }
+    bool GetSavefile() const    { return saveFile_; }
 
 protected:
     void InitBakeLightSettings(const BoundingBox& worldBoundingBox);
@@ -116,6 +114,15 @@ protected:
     void SendTriangleCompleteMsg();
     void SendIndirectCompleteMsg();
     void SetCameraPosRotForCapture();
+
+    // indirect background solidangle computation
+    void BackgroundProcessIndirectImage(void *data);
+    void QueueIndirectImage(unsigned idx, SharedPtr<Image> image);
+    SharedPtr<Image> GetFrontIndirectQueueImage(unsigned &idx);
+    void PopFrontIndirectQueueIdx();
+    void CalculateSolidAngleColor(unsigned idx, SharedPtr<Image> scrnImage);
+    void FinalizeIndirectImage();
+    void ProcessIndirectRenderSurface();
     void SmoothAndDilate(SharedPtr<Image> image, bool dilate=true);
 
 protected:
@@ -141,7 +148,15 @@ protected:
     bool                    bakeIndirectLight_;
 
     Mutex                   mutexStateLock_;
-    Mutex                   mutexSurfImageLock_;
+
+    struct IndirectData
+    {
+        SharedPtr<Image> image_;
+        unsigned         idx_;
+    };
+    Vector<IndirectData>    indirectDataList_;
+    Mutex                   mutexIndirectQueueLock_;
+
     unsigned                stateProcess_;
     unsigned                curPixelIdx_;
     Timer                   timerIndirect_;
@@ -158,6 +173,7 @@ private:
         State_IndirectLightSetup,
         State_IndirectLightBegin,
         State_IndirectLightProcess,
+        State_IndirectLightWaitBackground,
         State_IndirectLightEnd
     };
 
