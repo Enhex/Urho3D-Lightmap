@@ -56,8 +56,8 @@ void ImageDilate(SharedPtr<Image> image, SharedPtr<Image> outImage);
 //=============================================================================
 #define FIXED_INDIRECT_TEXSIZE      64
 
-// turn this on if you are rendering 256x256 or larger lightmaps, 
-// it's not all that significant for lower resolutions
+// this is defined by default and helps when having multiple 
+// captureParsers to pump images to the thread queue
 #define SOLIDANGLE_COLOR_THREADED
 
 //=============================================================================
@@ -69,6 +69,7 @@ Lightmap::Lightmap(Context* context)
     , texHeight_(512)
     , saveFile_(true)
     , bakeIndirectLight_(false)
+    , numCaptureParsers_(4)
 {
 }
 
@@ -282,29 +283,34 @@ void Lightmap::InitBakeLightSettings(const BoundingBox& worldBoundingBox)
 
 void Lightmap::InitIndirectLightSettings()
 {
-    camNode_ = GetScene()->CreateChild("RenderCamera");
+    captureParser_.Resize(numCaptureParsers_);
 
-    camera_ = camNode_->CreateComponent<Camera>();
-    // using hemisphere - not quite, M_MAX_FOV = 160
-    camera_->SetFov(M_MAX_FOV);
-    camera_->SetNearClip(0.0001f);
-    camera_->SetFarClip(300.0f);
-    camera_->SetAspectRatio(1.0f);
+    for ( unsigned i = 0; i < captureParser_.Size(); ++i )
+    {
+        captureParser_[i].camNode_ = GetScene()->CreateChild("RenderCamera");
 
-    viewport_ = new Viewport(context_, GetScene(), camera_);
-    viewport_->SetRenderPath(GetSubsystem<Renderer>()->GetViewport(0)->GetRenderPath());
+        captureParser_[i].camera_ = captureParser_[i].camNode_->CreateComponent<Camera>();
+        // using hemisphere - not quite, M_MAX_FOV = 160
+        captureParser_[i].camera_->SetFov(M_MAX_FOV);
+        captureParser_[i].camera_->SetNearClip(0.0001f);
+        captureParser_[i].camera_->SetFarClip(300.0f);
+        captureParser_[i].camera_->SetAspectRatio(1.0f);
 
-    // Construct render surface 
-    renderTexture_ = new Texture2D(context_);
-    renderTexture_->SetNumLevels(1);
+        captureParser_[i].viewport_ = new Viewport(context_, GetScene(), captureParser_[i].camera_);
+        captureParser_[i].viewport_->SetRenderPath(GetSubsystem<Renderer>()->GetViewport(0)->GetRenderPath());
 
-    //**note** indirect capture texture size is fixed to 64x64
-    renderTexture_->SetSize(FIXED_INDIRECT_TEXSIZE, FIXED_INDIRECT_TEXSIZE, Graphics::GetRGBAFormat(), TEXTURE_RENDERTARGET);
-    renderTexture_->SetFilterMode(FILTER_BILINEAR);
-    
-    renderSurface_ = renderTexture_->GetRenderSurface();
-    renderSurface_->SetViewport(0, viewport_);
-    renderSurface_->SetUpdateMode(SURFACE_UPDATEALWAYS);
+        // Construct render surface 
+        captureParser_[i].renderTexture_ = new Texture2D(context_);
+        captureParser_[i].renderTexture_->SetNumLevels(1);
+
+        //**note** indirect capture texture size is fixed to 64x64
+        captureParser_[i].renderTexture_->SetSize(FIXED_INDIRECT_TEXSIZE, FIXED_INDIRECT_TEXSIZE, Graphics::GetRGBAFormat(), TEXTURE_RENDERTARGET);
+        captureParser_[i].renderTexture_->SetFilterMode(FILTER_BILINEAR);
+        
+        captureParser_[i].renderSurface_ = captureParser_[i].renderTexture_->GetRenderSurface();
+        captureParser_[i].renderSurface_->SetViewport(0, captureParser_[i].viewport_);
+        captureParser_[i].renderSurface_->SetUpdateMode(SURFACE_UPDATEALWAYS);
+    }
 }
 
 unsigned Lightmap::GetState()
@@ -353,12 +359,16 @@ void Lightmap::ForegroundProcess()
 
             // and set 1st cam setting
             curPixelIdx_ = 0;
-            SetCameraPosRotForCapture();
+            pixelsCompleted_ = 0;
+            for ( unsigned i = 0; i < captureParser_.Size(); ++i )
+            {
+                SetCameraPosRotForCapture(i);
+            }
             timerIndirect_.Reset();
 
             SendTriangleInfoMsg();
 
-            SubscribeToEvent(E_ENDFRAME, URHO3D_HANDLER(Lightmap, HandlePostRenderIndirectLighting));
+            SubscribeToEvent(E_ENDVIEWRENDER, URHO3D_HANDLER(Lightmap, HandleEndViewRender));
 
             SetState(State_IndirectLightProcess);
 
@@ -407,18 +417,16 @@ void Lightmap::SendTriangleInfoMsg()
 {
     using namespace TriangleInfo;
 
-    unsigned prevIdx = M_MAX_UNSIGNED;
     unsigned triCnt = 0;
-    for ( unsigned i = 0; i < pixelData_.Size(); ++i )
+    for (unsigned i = 0; i < triangleData_.Size(); ++i )
     {
-        if (prevIdx != pixelData_[i].triIdx_)
+        if (triangleData_[i].pixelCnt_ > 0)
         {
-            prevIdx = pixelData_[i].triIdx_;
             ++triCnt;
         }
     }
 
-    VariantMap& eventData  = GetEventDataMap();
+    VariantMap &eventData  = GetEventDataMap();
     eventData[P_TRICNT]    = triCnt;
 
     SendEvent(E_TRIANGLEINFO, eventData);
@@ -441,14 +449,6 @@ void Lightmap::SendIndirectCompleteMsg()
     eventData[P_NODE]      = node_;
 
     SendEvent(E_INDIRECTCOMPLETED, eventData);
-}
-
-void Lightmap::SetCameraPosRotForCapture()
-{
-    PixelPoint &pixelPoint = pixelData_[curPixelIdx_];
-
-    camNode_->SetPosition(pixelPoint.pos_);
-    camNode_->SetDirection(pixelPoint.normal_);
 }
 
 void Lightmap::RestoreTempViewMask()
@@ -598,37 +598,68 @@ void Lightmap::FinalizeIndirectImage()
     SendIndirectCompleteMsg();
 }
 
-void Lightmap::ProcessIndirectRenderSurface()
+void Lightmap::SetCameraPosRotForCapture(unsigned idx)
 {
+    captureParser_[idx].isStopped_ = true;
+
+    if (curPixelIdx_ < pixelData_.Size())
+    {
+        PixelPoint &pixelPoint = pixelData_[curPixelIdx_];
+        unsigned prevTriIdx = pixelData_[curPixelIdx_].triIdx_;
+
+        captureParser_[idx].camNode_->SetPosition(pixelPoint.pos_);
+        captureParser_[idx].camNode_->SetDirection(pixelPoint.normal_);
+        captureParser_[idx].pixelIdx_  = curPixelIdx_;
+        captureParser_[idx].triIdx_    = pixelPoint.triIdx_;
+        captureParser_[idx].isStopped_ = false;
+        captureParser_[idx].renderSurface_->SetUpdateMode(SURFACE_UPDATEALWAYS);
+
+        if (++curPixelIdx_ < pixelData_.Size())
+        {
+            // send tri complete msg
+            if (prevTriIdx != pixelData_[curPixelIdx_].triIdx_)
+            {
+                SendTriangleCompleteMsg();
+            }
+        }
+    }
+
+    // remove components
+    if (captureParser_[idx].isStopped_)
+    {
+        captureParser_[idx].renderSurface_->SetUpdateMode(SURFACE_MANUALUPDATE);
+        captureParser_[idx].camNode_->Remove();
+        captureParser_[idx].camNode_ = NULL;
+        captureParser_[idx].camera_ = NULL;
+        captureParser_[idx].viewport_ = NULL;
+        captureParser_[idx].renderSurface_ = NULL;
+        captureParser_[idx].renderTexture_ = NULL;
+    }
+}
+
+void Lightmap::ProcessIndirectRenderSurface(unsigned parserIdx)
+{
+    unsigned pixelIdx = captureParser_[parserIdx].pixelIdx_;
+
     #ifdef SOLIDANGLE_COLOR_THREADED
-    QueueIndirectImage(curPixelIdx_, renderTexture_->GetImage());
+    QueueIndirectImage(pixelIdx, captureParser_[parserIdx].renderTexture_->GetImage());
     #else
-    CalculateSolidAngleColor(curPixelIdx_, renderTexture_->GetImage());
+    CalculateSolidAngleColor(pixelIdx, captureParser_[parserIdx].renderTexture_->GetImage());
     #endif
 
-    // check tri complete
-    unsigned prevTriIdx = pixelData_[curPixelIdx_].triIdx_;
+    // update pixel idx and surfaceupdate mode 
+    SetCameraPosRotForCapture(parserIdx);
 
-    if (++curPixelIdx_ >= pixelData_.Size())
+    // check tri complete
+    if (++pixelsCompleted_ >= pixelData_.Size())
     {
-        Stop();
+        UnsubscribeFromEvent(E_ENDVIEWRENDER);
 
         #ifdef SOLIDANGLE_COLOR_THREADED
         SetState(State_IndirectLightWaitBackground);
         #else
         FinalizeIndirectImage();
         #endif
-    }
-    else
-    {
-        SetCameraPosRotForCapture();
-
-        // send tri complete msg
-        unsigned nextTriIdx = pixelData_[curPixelIdx_].triIdx_;
-        if (nextTriIdx != prevTriIdx)
-        {
-            SendTriangleCompleteMsg();
-        }
     }
 }
 
@@ -650,10 +681,22 @@ void Lightmap::SmoothAndDilate(SharedPtr<Image> inImage, bool dilate)
     }
 }
 
-void Lightmap::HandlePostRenderIndirectLighting(StringHash eventType, VariantMap& eventData)
+void Lightmap::HandleEndViewRender(StringHash eventType, VariantMap& eventData)
 {
-    // process render surface
-    ProcessIndirectRenderSurface();
+    using namespace EndViewRender;
+    Camera* camera = (Camera*)eventData[P_CAMERA].GetVoidPtr();
+
+    for ( unsigned i = 0; i < captureParser_.Size(); ++i )
+    {
+        CaptureData &captureData = captureParser_[i];
+
+        if (captureParser_[i].camera_ && captureParser_[i].camera_ == camera)
+        {
+            // process render surface
+            ProcessIndirectRenderSurface(i);
+            break;
+        }
+    }
 }
 
 void Lightmap::SetupGeomData()
@@ -741,13 +784,15 @@ void Lightmap::SetupPixelData()
     const float texSizeYINV = 1.0f/(float)texSizeY;
 
     pixelData_.Reserve((int)((float)(texSizeX * texSizeY) * 1.05f));
+    triangleData_.Resize(numIndices_/3);
+    bool isShort = (indexSize_ == sizeof(unsigned short));
 
     // build sh coeff
     for( unsigned i = 0; i < numIndices_; i += 3 )
     {
-        const unsigned idx0 = (const unsigned)((indexSize_ == sizeof(unsigned short))?(indexBuffShort_[i+0]):(indexBuff_[i+0]));
-        const unsigned idx1 = (const unsigned)((indexSize_ == sizeof(unsigned short))?(indexBuffShort_[i+1]):(indexBuff_[i+1]));
-        const unsigned idx2 = (const unsigned)((indexSize_ == sizeof(unsigned short))?(indexBuffShort_[i+2]):(indexBuff_[i+2]));
+        const unsigned idx0 = (const unsigned)(isShort?(indexBuffShort_[i+0]):(indexBuff_[i+0]));
+        const unsigned idx1 = (const unsigned)(isShort?(indexBuffShort_[i+1]):(indexBuff_[i+1]));
+        const unsigned idx2 = (const unsigned)(isShort?(indexBuffShort_[i+2]):(indexBuff_[i+2]));
 
         const Vector3 &v0 = geomData_[idx0].pos_;	
         const Vector3 &v1 = geomData_[idx1].pos_;	
@@ -787,6 +832,12 @@ void Lightmap::SetupPixelData()
         const int pixMinY = (int)Max((float)floor(yMin*texSizeY)-1, 0.0f); 
         const int pixMaxY = (int)Min((float)ceil(yMax*texSizeY)+1, (float)texSizeY);
 
+        // gather info on triangle data
+        TriangleData &triangleData = triangleData_[i/3];
+        triangleData.pixelCnt_ = 0;
+        triangleData.minXY_    = IntVector2(M_MAX_INT, M_MAX_INT);
+        triangleData.maxXY_    = IntVector2(-1, -1);
+
         Vector3 point, normal, bary;
 
         for ( int x = pixMinX; x < pixMaxX; ++x ) 
@@ -808,6 +859,14 @@ void Lightmap::SetupPixelData()
                     pixelPt.pos_    = point;
                     pixelPt.normal_ = normal;
                     pixelPt.iuv_    = IntVector2(x, y);
+                    pixelPt.col_    = Color::TRANSPARENT;
+
+                    // update triangle data
+                    ++triangleData.pixelCnt_;
+                    triangleData.minXY_.x_ = Min(x, triangleData.minXY_.x_);
+                    triangleData.maxXY_.x_ = Max(x, triangleData.maxXY_.x_);
+                    triangleData.minXY_.y_ = Min(y, triangleData.minXY_.y_);
+                    triangleData.maxXY_.y_ = Max(y, triangleData.maxXY_.y_);
                 }
             }
         }

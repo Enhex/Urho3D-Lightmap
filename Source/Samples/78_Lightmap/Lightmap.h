@@ -24,6 +24,7 @@
 
 #include <Urho3D/Scene/Component.h>
 #include <Urho3D/Core/HelperThread.h>
+#include <Urho3D/Graphics/Texture2D.h>
 
 using namespace Urho3D;
 namespace Urho3D
@@ -98,7 +99,7 @@ protected:
     void InitIndirectLightSettings();
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
     void HandlePostRenderBakeLighting(StringHash eventType, VariantMap& eventData);
-    void HandlePostRenderIndirectLighting(StringHash eventType, VariantMap& eventData);
+    void HandleEndViewRender(StringHash eventType, VariantMap& eventData);
     void RestoreTempViewMask();
     void SendDirectLightMsg();
     void Stop();
@@ -113,7 +114,7 @@ protected:
     void SendTriangleInfoMsg();
     void SendTriangleCompleteMsg();
     void SendIndirectCompleteMsg();
-    void SetCameraPosRotForCapture();
+    void SetCameraPosRotForCapture(unsigned idx);
 
     // indirect background solidangle computation
     void BackgroundProcessIndirectImage(void *data);
@@ -122,7 +123,7 @@ protected:
     void PopFrontIndirectQueueIdx();
     void CalculateSolidAngleColor(unsigned idx, SharedPtr<Image> scrnImage);
     void FinalizeIndirectImage();
-    void ProcessIndirectRenderSurface();
+    void ProcessIndirectRenderSurface(unsigned parserIdx);
     void SmoothAndDilate(SharedPtr<Image> image, bool dilate=true);
 
 protected:
@@ -134,10 +135,11 @@ protected:
     String                  filepath_;
 
     WeakPtr<Node>           camNode_;
-    SharedPtr<Camera>       camera_;
+    WeakPtr<Camera>         camera_;
     SharedPtr<Viewport>     viewport_;
     SharedPtr<Texture2D>    renderTexture_;
     WeakPtr<RenderSurface>  renderSurface_;
+
     SharedPtr<Image>        directLightImage_;
     SharedPtr<Image>        indirectLightImage_;
     float                   solidangle_;
@@ -159,6 +161,7 @@ protected:
 
     unsigned                stateProcess_;
     unsigned                curPixelIdx_;
+    unsigned                prevPixelIdx_;
     Timer                   timerIndirect_;
 
     SharedPtr<HelperThread<Lightmap> > threadProcess_;
@@ -177,6 +180,23 @@ private:
         State_IndirectLightEnd
     };
 
+    struct CaptureData
+    {
+        WeakPtr<Node>           camNode_;
+        WeakPtr<Camera>         camera_;
+        SharedPtr<Viewport>     viewport_;
+        SharedPtr<Texture2D>    renderTexture_;
+        WeakPtr<RenderSurface>  renderSurface_;
+
+        unsigned                pixelIdx_;
+        unsigned                triIdx_;
+        bool                    isStopped_;
+    };
+
+    Vector<CaptureData>         captureParser_;
+    unsigned                    numCaptureParsers_;
+    unsigned                    pixelsCompleted_;
+
     struct GeomData
     {
         Vector3 pos_;
@@ -192,8 +212,16 @@ private:
         Color       col_;
     };
 
+    struct TriangleData
+    {
+        unsigned pixelCnt_;
+        IntVector2 minXY_;
+        IntVector2 maxXY_;
+    };
+
     PODVector<GeomData> geomData_;
     PODVector<PixelPoint> pixelData_;
+    PODVector<TriangleData> triangleData_;
     SharedArrayPtr<unsigned short> indexBuffShort_;
     SharedArrayPtr<unsigned> indexBuff_;
     unsigned numIndices_;

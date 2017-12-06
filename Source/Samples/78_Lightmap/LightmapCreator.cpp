@@ -27,6 +27,7 @@
 #include <Urho3D/Resource/ResourceCache.h>
 #include <Urho3D/Resource/Image.h>
 #include <Urho3D/Graphics/Zone.h>
+#include <Urho3D/Graphics/Renderer.h>
 #include <Urho3D/Graphics/Material.h>
 #include <Urho3D/Graphics/Model.h>
 #include <Urho3D/Graphics/StaticModel.h>
@@ -253,7 +254,6 @@ void LightmapCreator::QueueNodesForIndirectLightProcess()
     while (buildRequiredNodeList_.Size() && processingNodeList_.Size() < maxNodesToProcess_)
     {
         Node* node = buildRequiredNodeList_[0];
-
         Lightmap *lightmap = node->GetComponent<Lightmap>();
 
         // specify lightmap resolution - e.g. BeginIndirectLighting(outputPath_, 128), default = 64
