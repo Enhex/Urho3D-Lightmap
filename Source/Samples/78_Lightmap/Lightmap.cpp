@@ -288,8 +288,8 @@ void Lightmap::InitIndirectLightSettings()
     for ( unsigned i = 0; i < captureParser_.Size(); ++i )
     {
         captureParser_[i].camNode_ = GetScene()->CreateChild("RenderCamera");
-
         captureParser_[i].camera_ = captureParser_[i].camNode_->CreateComponent<Camera>();
+
         // using hemisphere - not quite, M_MAX_FOV = 160
         captureParser_[i].camera_->SetFov(M_MAX_FOV);
         captureParser_[i].camera_->SetNearClip(0.0001f);
@@ -604,8 +604,8 @@ void Lightmap::SetCameraPosRotForCapture(unsigned idx)
 
     if (curPixelIdx_ < pixelData_.Size())
     {
-        PixelPoint &pixelPoint = pixelData_[curPixelIdx_];
-        unsigned prevTriIdx = pixelData_[curPixelIdx_].triIdx_;
+        const PixelPoint &pixelPoint = pixelData_[curPixelIdx_];
+        unsigned prevTriIdx = pixelPoint.triIdx_;
 
         captureParser_[idx].camNode_->SetPosition(pixelPoint.pos_);
         captureParser_[idx].camNode_->SetDirection(pixelPoint.normal_);
@@ -627,7 +627,6 @@ void Lightmap::SetCameraPosRotForCapture(unsigned idx)
     // remove components
     if (captureParser_[idx].isStopped_)
     {
-        captureParser_[idx].renderSurface_->SetUpdateMode(SURFACE_MANUALUPDATE);
         captureParser_[idx].camNode_->Remove();
         captureParser_[idx].camNode_ = NULL;
         captureParser_[idx].camera_ = NULL;

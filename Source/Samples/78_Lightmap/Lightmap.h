@@ -161,7 +161,6 @@ protected:
 
     unsigned                stateProcess_;
     unsigned                curPixelIdx_;
-    unsigned                prevPixelIdx_;
     Timer                   timerIndirect_;
 
     SharedPtr<HelperThread<Lightmap> > threadProcess_;
