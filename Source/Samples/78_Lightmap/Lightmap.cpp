@@ -283,7 +283,10 @@ void Lightmap::InitBakeLightSettings(const BoundingBox& worldBoundingBox)
 
 void Lightmap::InitIndirectLightSettings()
 {
+    // init
     captureParser_.Resize(numCaptureParsers_);
+    curPixelIdx_ = 0;
+    pixelsCompleted_ = 0;
 
     for ( unsigned i = 0; i < captureParser_.Size(); ++i )
     {
@@ -310,7 +313,15 @@ void Lightmap::InitIndirectLightSettings()
         captureParser_[i].renderSurface_ = captureParser_[i].renderTexture_->GetRenderSurface();
         captureParser_[i].renderSurface_->SetViewport(0, captureParser_[i].viewport_);
         captureParser_[i].renderSurface_->SetUpdateMode(SURFACE_UPDATEALWAYS);
+
+        // set cam pos rot
+        SetCameraPosRotForCapture(i);
     }
+
+    // start timer
+    timerIndirect_.Reset();
+
+    SubscribeToEvent(E_ENDVIEWRENDER, URHO3D_HANDLER(Lightmap, HandleEndViewRender));
 }
 
 unsigned Lightmap::GetState()
@@ -354,21 +365,10 @@ void Lightmap::ForegroundProcess()
             // kill thread
             threadProcess_ = NULL;
 
-            // setup for indirect lighting
-            InitIndirectLightSettings();
-
-            // and set 1st cam setting
-            curPixelIdx_ = 0;
-            pixelsCompleted_ = 0;
-            for ( unsigned i = 0; i < captureParser_.Size(); ++i )
-            {
-                SetCameraPosRotForCapture(i);
-            }
-            timerIndirect_.Reset();
-
             SendTriangleInfoMsg();
 
-            SubscribeToEvent(E_ENDVIEWRENDER, URHO3D_HANDLER(Lightmap, HandleEndViewRender));
+            // setup indirect lighting
+            InitIndirectLightSettings();
 
             SetState(State_IndirectLightProcess);
 
@@ -612,7 +612,6 @@ void Lightmap::SetCameraPosRotForCapture(unsigned idx)
         captureParser_[idx].pixelIdx_  = curPixelIdx_;
         captureParser_[idx].triIdx_    = pixelPoint.triIdx_;
         captureParser_[idx].isStopped_ = false;
-        captureParser_[idx].renderSurface_->SetUpdateMode(SURFACE_UPDATEALWAYS);
 
         if (++curPixelIdx_ < pixelData_.Size())
         {
