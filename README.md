@@ -2,7 +2,7 @@
   
 ---
 ### Description
-Lightmap texture baking sample.  
+Lightmap generator for Urho3D.  Generates indirect lighting lightmaps used for static GI, bakes direct and indirect textures.
 
 Generates textures on texCoord2:
 * direct baked lighting
@@ -12,7 +12,7 @@ Generates textures on texCoord2:
 **Note:** baked textures are generated via GPU.
 
 #### Full OpenGL Implementation
-I've applied the same changes to the hlsl shader for texture baking, but for some reason, I only get black images from the view capture. I will not be pursuing this fix, however, you still can generate lightmap textures.
+I've applied the same changes to the hlsl shader for texture baking, but for some reason, I only get black images from the view capture. I will not be pursuing this fix, however, you still can generate lightmap textures. Essentially, that's all you need to achieve direct and indirect lighting shown in the below screenshots.
 
 ---  
 ### Setup:
