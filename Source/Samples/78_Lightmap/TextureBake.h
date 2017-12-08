@@ -85,19 +85,6 @@ protected:
     void Stop();
     void OutputFile();
 
-    unsigned GetState();
-    void SetState(unsigned state);
-
-    // indirect background solidangle computation
-    void BackgroundProcessIndirectImage(void *data);
-    void QueueIndirectImage(unsigned idx, SharedPtr<Image> image);
-    SharedPtr<Image> GetFrontIndirectQueueImage(unsigned &idx);
-    void PopFrontIndirectQueueIdx();
-    void CalculateSolidAngleColor(unsigned idx, SharedPtr<Image> scrnImage);
-    void FinalizeIndirectImage();
-    void ProcessIndirectRenderSurface(unsigned parserIdx);
-    void SmoothAndDilate(SharedPtr<Image> image, bool dilate=true);
-
 protected:
     WeakPtr<StaticModel>    staticModel_;
     SharedPtr<Material>     origMaterial_;
