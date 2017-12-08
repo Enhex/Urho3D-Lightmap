@@ -64,11 +64,9 @@ void ImageDilate(SharedPtr<Image> image, SharedPtr<Image> outImage);
 //=============================================================================
 Lightmap::Lightmap(Context* context)
     : Component(context)
-    , origViewMask_(0)
     , texWidth_(512)
     , texHeight_(512)
     , saveFile_(true)
-    , bakeIndirectLight_(false)
     , numCaptureParsers_(4)
 {
 }
@@ -85,84 +83,10 @@ void Lightmap::RegisterObject(Context* context)
     context->RegisterFactory<Lightmap>();
 }
 
-bool Lightmap::InitModelSetting(unsigned tempViewMask)
-{
-    bool success = false;
-
-    if (node_)
-    {
-        staticModel_ = node_->GetComponent<StaticModel>();
-
-        if (staticModel_)
-        {
-            origMaterial_ = staticModel_->GetMaterial()->Clone();
-            origViewMask_ = staticModel_->GetViewMask();
-
-            // assign temp view mask during the process
-            tempViewMask_ = tempViewMask;
-            staticModel_->SetViewMask(tempViewMask_);
-
-            success = true;
-        }
-    }
-
-    return success;
-}
-
-bool Lightmap::RestoreModelSetting()
-{
-    bool success = false;
-
-    if (staticModel_)
-    {
-        staticModel_->SetMaterial(origMaterial_);
-        staticModel_->SetViewMask(origViewMask_);
-
-        success = true;
-    }
-
-    return success;
-}
-
-void Lightmap::BakeDirectLight(const String &filepath, unsigned imageSize)
-{
-    // InitModelSetting() fn must be called 1st
-    if (staticModel_)
-    {
-        ResourceCache* cache = GetSubsystem<ResourceCache>();
-
-        texWidth_ = texHeight_ = imageSize;
-        filepath_ = filepath;
-        bakeIndirectLight_ = false;
-
-        // clone mat to make changes
-        SharedPtr<Material> dupMat = staticModel_->GetMaterial()->Clone();
-        staticModel_->SetMaterial(dupMat);
-
-        // choose appropriate bake technique
-        Technique *technique = dupMat->GetTechnique(0);
-        if (technique->GetName().Find("NoTexture") != String::NPOS)
-        {
-            dupMat->SetTechnique(0, cache->GetResource<Technique>("Lightmap/Techniques/NoTextureBake.xml"));
-        }
-        else
-        {
-            dupMat->SetTechnique(0, cache->GetResource<Technique>("Lightmap/Techniques/DiffBake.xml"));
-        }
-
-        //**NOTE** change mask
-        staticModel_->SetViewMask(staticModel_->GetViewMask() | ViewMask_Capture);
-
-        // setup for direct lighting
-        InitBakeLightSettings(staticModel_->GetWorldBoundingBox());
-
-        SubscribeToEvent(E_ENDFRAME, URHO3D_HANDLER(Lightmap, HandlePostRenderBakeLighting));
-    }
-}
-
 void Lightmap::BeginIndirectLighting(const String &filepath, unsigned imageSize)
 {
-    // InitModelSetting() fn must be called 1st
+    staticModel_ = node_->GetComponent<StaticModel>();
+
     if (staticModel_)
     {
         texWidth_ = texHeight_ = imageSize;
@@ -178,107 +102,6 @@ void Lightmap::BeginIndirectLighting(const String &filepath, unsigned imageSize)
         SetState(State_CreateGeomData);
         SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(Lightmap, HandleUpdate));
     }
-}
-
-void Lightmap::SwitchToLightmapTechnique()
-{
-    // InitModelSetting() fn must be called 1st
-    if (staticModel_)
-    {
-        ResourceCache* cache = GetSubsystem<ResourceCache>();
-
-        // clone mat to make changes
-        SharedPtr<Material> dupMat = staticModel_->GetMaterial()->Clone();
-        staticModel_->SetMaterial(dupMat);
-
-        // choose appropriate lightmap technique
-        Technique *technique = dupMat->GetTechnique(0);
-        if (technique->GetName().Find("NoTexture") != String::NPOS)
-        {
-            dupMat->SetTechnique(0, cache->GetResource<Technique>("Lightmap/Techniques/NoTextureLightMap.xml"));
-        }
-        else
-        {
-            dupMat->SetTechnique(0, cache->GetResource<Technique>("Techniques/DiffLightMap.xml"));
-        }
-
-        dupMat->SetShaderParameter("MatEmissiveColor", Color::BLACK);
-        SharedPtr<Texture2D> emissiveTex(new Texture2D(context_));
-        emissiveTex->SetData(indirectLightImage_);
-        dupMat->SetTexture(TU_EMISSIVE, emissiveTex);
-    }
-}
-
-void Lightmap::BakeIndirectLight(const String &filepath, unsigned imageSize)
-{
-    // InitModelSetting() fn must be called 1st
-    if (staticModel_)
-    {
-        ResourceCache* cache = GetSubsystem<ResourceCache>();
-
-        texWidth_ = texHeight_ = imageSize;
-        filepath_ = filepath;
-        bakeIndirectLight_ = true;
-
-        // clone mat to make changes
-        SharedPtr<Material> dupMat = staticModel_->GetMaterial()->Clone();
-        staticModel_->SetMaterial(dupMat);
-
-        // choose appropriate bake technique
-        Technique *technique = dupMat->GetTechnique(0);
-        if (technique->GetName().Find("NoTexture") != String::NPOS)
-        {
-            dupMat->SetTechnique(0, cache->GetResource<Technique>("Lightmap/Techniques/NoTextureBakeIndirect.xml"));
-        }
-        else
-        {
-            dupMat->SetTechnique(0, cache->GetResource<Technique>("Lightmap/Techniques/DiffBakeIndirect.xml"));
-        }
-        dupMat->SetShaderParameter("MatEmissiveColor", Color::BLACK);
-        SharedPtr<Texture2D> emissiveTex(new Texture2D(context_));
-        emissiveTex->SetData(indirectLightImage_);
-        dupMat->SetTexture(TU_EMISSIVE, emissiveTex);
-
-        //**NOTE** change mask
-        staticModel_->SetViewMask(staticModel_->GetViewMask() | ViewMask_Capture);
-
-        // setup for direct lighting
-        InitBakeLightSettings(staticModel_->GetWorldBoundingBox());
-
-        SubscribeToEvent(E_ENDFRAME, URHO3D_HANDLER(Lightmap, HandlePostRenderBakeLighting));
-    }
-}
-
-void Lightmap::InitBakeLightSettings(const BoundingBox& worldBoundingBox)
-{
-    camNode_ = GetScene()->CreateChild("RenderCamera");
-
-    // set campos right at the model
-    Vector3 halfSize = worldBoundingBox.HalfSize();
-    camNode_->SetWorldPosition(worldBoundingBox.Center() - Vector3(0, 0, halfSize.z_));
-
-    camera_ = camNode_->CreateComponent<Camera>();
-    camera_->SetFov(90.0f);
-    camera_->SetNearClip(0.0001f);
-    camera_->SetAspectRatio(1.0f);
-    camera_->SetOrthographic(true);
-    camera_->SetOrthoSize(Vector2((float)texWidth_, (float)texHeight_));
-
-    //**NOTE** change mask
-    camera_->SetViewMask(ViewMask_Capture);
-
-    viewport_ = new Viewport(context_, GetScene(), camera_);
-    viewport_->SetRenderPath(GetSubsystem<Renderer>()->GetViewport(0)->GetRenderPath());
-
-    // Construct render surface 
-    renderTexture_ = new Texture2D(context_);
-    renderTexture_->SetNumLevels(1);
-    renderTexture_->SetSize(texWidth_, texHeight_, Graphics::GetRGBAFormat(), TEXTURE_RENDERTARGET);
-    renderTexture_->SetFilterMode(FILTER_BILINEAR);
-    
-    renderSurface_ = renderTexture_->GetRenderSurface();
-    renderSurface_->SetViewport(0, viewport_);
-    renderSurface_->SetUpdateMode(SURFACE_UPDATEALWAYS);
 }
 
 void Lightmap::InitIndirectLightSettings()
@@ -449,61 +272,6 @@ void Lightmap::SendIndirectCompleteMsg()
     eventData[P_NODE]      = node_;
 
     SendEvent(E_INDIRECTCOMPLETED, eventData);
-}
-
-void Lightmap::RestoreTempViewMask()
-{
-    // restore model's orig state
-    staticModel_->SetMaterial(origMaterial_);
-    staticModel_->SetViewMask(tempViewMask_);
-}
-
-void Lightmap::Stop()
-{
-    // remove
-    camNode_->Remove();
-    camNode_ = NULL;
-    viewport_ = NULL;
-    renderSurface_ = NULL;
-    renderTexture_ = NULL;
-
-    UnsubscribeFromEvent(E_ENDFRAME);
-}
-
-void Lightmap::OutputFile()
-{
-    // generate output file
-    if (saveFile_)
-    {
-        String name = !bakeIndirectLight_?ToString("node%u_bakeDirect.png", node_->GetID()):ToString("node%u_bakeIndirect.png", node_->GetID());
-        String path = filepath_ + name;
-
-        directLightImage_->SavePNG(path);
-    }
-}
-
-void Lightmap::SendDirectLightMsg()
-{
-    using namespace DirectLightmapDone;
-
-    VariantMap& eventData  = GetEventDataMap();
-    eventData[P_NODE]      = node_;
-
-    SendEvent(E_DIRECTLIGHTINGDONE, eventData);
-}
-
-void Lightmap::HandlePostRenderBakeLighting(StringHash eventType, VariantMap& eventData)
-{
-    // get image prior to deleting the surface
-    directLightImage_ = renderTexture_->GetImage();
-
-    RestoreTempViewMask();
-
-    Stop();
-
-    OutputFile();
-
-    SendDirectLightMsg();
 }
 
 void Lightmap::BackgroundProcessIndirectImage(void *data)

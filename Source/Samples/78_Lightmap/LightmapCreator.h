@@ -77,7 +77,7 @@ protected:
     void SendEventMsg();
     void RestoreModelSettigs();
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
-    void HandleDirectLightBuildEvent(StringHash eventType, VariantMap& eventData);
+    void HandleBakeLightBuildEvent(StringHash eventType, VariantMap& eventData);
     void SendIndirectLightingStatus(bool removemsg=false);
     void HandleTriangleInfoEvent(StringHash eventType, VariantMap& eventData);
     void HandleTriangleCompletedEvent(StringHash eventType, VariantMap& eventData);

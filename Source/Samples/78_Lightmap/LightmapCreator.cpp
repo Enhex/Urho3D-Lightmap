@@ -37,6 +37,7 @@
 #include <Urho3D/IO/Log.h>
 
 #include "LightmapCreator.h"
+#include "TextureBake.h"
 #include "Lightmap.h"
 
 #include <Urho3D/DebugNew.h>
@@ -49,6 +50,7 @@ LightmapCreator::LightmapCreator(Context* context)
     , maxNodesToProcess_(8)
     , lightmapState_(LightMap_UnInit)
 {
+    TextureBake::RegisterObject(context);
     Lightmap::RegisterObject(context);
 }
 
@@ -79,7 +81,7 @@ void LightmapCreator::GenerateLightmaps()
     QueueNodesForLightBaking();
 
     SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(LightmapCreator, HandleUpdate));
-    SubscribeToEvent(E_DIRECTLIGHTINGDONE, URHO3D_HANDLER(LightmapCreator, HandleDirectLightBuildEvent));
+    SubscribeToEvent(E_BAKELIGHTINGDONE, URHO3D_HANDLER(LightmapCreator, HandleBakeLightBuildEvent));
 }
 
 void LightmapCreator::HandleUpdate(StringHash eventType, VariantMap& eventData)
@@ -117,7 +119,8 @@ void LightmapCreator::HandleUpdate(StringHash eventType, VariantMap& eventData)
             for ( unsigned i = 0; i < origNodeList_.Size(); ++i )
             {
                 Lightmap *lightmap = origNodeList_[i]->GetComponent<Lightmap>();
-                lightmap->SwitchToLightmapTechnique();
+                TextureBake *textureBake = origNodeList_[i]->GetComponent<TextureBake>();
+                textureBake->SwitchToLightmapTechnique(lightmap->GetIndirectLightImage());
             }
 
             // setup for indirect baking - change state prior to calling the below fn
@@ -157,10 +160,13 @@ unsigned LightmapCreator::ParseModelsInScene()
         // texcoord2 is required
         if (HasTexCoord2(result[i]->GetComponent<StaticModel>()))
         {
-            // create lightmap component and init model settings required for baking process
+            // create components
+            TextureBake *textureBake = result[i]->CreateComponent<TextureBake>();
+            textureBake->InitModelSetting(ViewMask_Default);
+            //textureBake->SetSavefile(false);
+
+            // create lightmap
             Lightmap *lightmap = result[i]->CreateComponent<Lightmap>();
-            lightmap->InitModelSetting(ViewMask_Default);
-            //lightmap->SetSavefile(false);
 
             origNodeList_.Push(result[i]);
             buildRequiredNodeList_.Push(result[i]);
@@ -218,8 +224,8 @@ void LightmapCreator::SetupBakeIndirectProcess()
 
     for ( unsigned i = 0; i < origNodeList_.Size(); ++i )
     {
-        Lightmap *lightmap = origNodeList_[i]->GetComponent<Lightmap>();
-        lightmap->InitModelSetting(ViewMask_Default);
+        TextureBake *textureBake = origNodeList_[i]->GetComponent<TextureBake>();
+        textureBake->InitModelSetting(ViewMask_Default);
 
         buildRequiredNodeList_[i] = origNodeList_[i];
     }
@@ -266,14 +272,14 @@ void LightmapCreator::QueueNodesForIndirectLightProcess()
 
 void LightmapCreator::BakeDirectLight(Node *node)
 {
-    Lightmap *lightmap = node->GetComponent<Lightmap>();
-    lightmap->BakeDirectLight(outputPath_);
+    TextureBake *textureBake = node->GetComponent<TextureBake>();
+    textureBake->BakeDirectLight(outputPath_);
 }
 
 void LightmapCreator::BakeIndirectLight(Node *node)
 {
-    Lightmap *lightmap = node->GetComponent<Lightmap>();
-    lightmap->BakeIndirectLight(outputPath_);
+    TextureBake *textureBake = node->GetComponent<TextureBake>();
+    textureBake->BakeIndirectLight(outputPath_);
 }
 
 void LightmapCreator::RemoveCompletedNode(Node *node)
@@ -300,8 +306,8 @@ void LightmapCreator::RestoreModelSettigs()
 {
     for ( unsigned i = 0; i < origNodeList_.Size(); ++i )
     {
-        Lightmap *lightmap = origNodeList_[i]->GetComponent<Lightmap>();
-        lightmap->RestoreModelSetting();
+        TextureBake *textureBake = origNodeList_[i]->GetComponent<TextureBake>();
+        textureBake->RestoreModelSetting();
     }
 }
 
@@ -316,9 +322,9 @@ void LightmapCreator::SendEventMsg()
     SendEvent(E_LIGHTMAPSTATUS, eventData);
 }
 
-void LightmapCreator::HandleDirectLightBuildEvent(StringHash eventType, VariantMap& eventData)
+void LightmapCreator::HandleBakeLightBuildEvent(StringHash eventType, VariantMap& eventData)
 {
-    using namespace DirectLightmapDone;
+    using namespace BakeLightmapDone;
     Node *node = (Node*)eventData[P_NODE].GetVoidPtr();
 
     RemoveCompletedNode(node);

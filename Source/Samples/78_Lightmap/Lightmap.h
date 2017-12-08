@@ -41,11 +41,6 @@ class Viewport;
 
 //=============================================================================
 //=============================================================================
-URHO3D_EVENT(E_DIRECTLIGHTINGDONE, DirectLightmapDone)
-{
-    URHO3D_PARAM(P_NODE, Node);      // node ptr
-}
-
 URHO3D_EVENT(E_TRIANGLEINFO, TriangleInfo)
 {
     URHO3D_PARAM(P_TRICNT, TriCnt);  // unsigned
@@ -63,13 +58,6 @@ URHO3D_EVENT(E_INDIRECTCOMPLETED, IndirectCompleted)
 
 //=============================================================================
 //=============================================================================
-enum ViewMaskType
-{
-    ViewMask_Default = (1 << 0),
-    ViewMask_Capture = (1 << 7),
-};
-
-const unsigned DEFAULT_IMAGE_SIZE = 512;
 const unsigned DEFAULT_INDIRECT_IMAGE_SIZE = 64;
 
 //=============================================================================
@@ -84,26 +72,14 @@ public:
     
     static void RegisterObject(Context* context);
 
-    bool InitModelSetting(unsigned tempViewMask);
-    bool RestoreModelSetting();
-    void BakeDirectLight(const String &filepath, unsigned imageSize=DEFAULT_IMAGE_SIZE);
     void BeginIndirectLighting(const String &filepath, unsigned imageSize=DEFAULT_INDIRECT_IMAGE_SIZE);
-    void SwitchToLightmapTechnique();
-    void BakeIndirectLight(const String &filepath, unsigned imageSize=DEFAULT_IMAGE_SIZE);
-
-    void SetSavefile(bool bset) { saveFile_ =  bset; }
-    bool GetSavefile() const    { return saveFile_; }
+    SharedPtr<Image> GetIndirectLightImage() { return indirectLightImage_; }
 
 protected:
     void InitBakeLightSettings(const BoundingBox& worldBoundingBox);
     void InitIndirectLightSettings();
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
-    void HandlePostRenderBakeLighting(StringHash eventType, VariantMap& eventData);
     void HandleEndViewRender(StringHash eventType, VariantMap& eventData);
-    void RestoreTempViewMask();
-    void SendDirectLightMsg();
-    void Stop();
-    void OutputFile();
 
     unsigned GetState();
     void SetState(unsigned state);
@@ -128,26 +104,14 @@ protected:
 
 protected:
     WeakPtr<StaticModel>    staticModel_;
-    SharedPtr<Material>     origMaterial_;
-    unsigned                origViewMask_;
-    unsigned                tempViewMask_;
-
     String                  filepath_;
 
-    WeakPtr<Node>           camNode_;
-    WeakPtr<Camera>         camera_;
-    SharedPtr<Viewport>     viewport_;
-    SharedPtr<Texture2D>    renderTexture_;
-    WeakPtr<RenderSurface>  renderSurface_;
-
-    SharedPtr<Image>        directLightImage_;
     SharedPtr<Image>        indirectLightImage_;
     float                   solidangle_;
 
     unsigned                texWidth_;
     unsigned                texHeight_;
     bool                    saveFile_;
-    bool                    bakeIndirectLight_;
 
     Mutex                   mutexStateLock_;
 
