@@ -2,9 +2,14 @@
   
 ---
 ### Description
-Lightmap generator for Urho3D.  Generates indirect lighting lightmaps used for static GI, bakes direct and indirect textures.
+Lightmap generator for Urho3D. This implementation is based on **Hugo Elias's Radiosity**. Except, I haven't implemented the skipping of pixels, evaluate, and interpolate part, but brute force pixel processing. And I also use hemisphere instead of hemicube, which is used by all implementation that I've seen that use Hugo's method.
 
-Generates textures on texCoord2:
+This implementation is, not by any means, perfect, but using Urho3D's tech., it's **blazing fast**. And the accuracy only depend on the lightmap/indirect light resolution that you choose.
+
+Here's an example of the lightmap image created at 512x512 resolution:
+![alt tag](https://github.com/Lumak/Urho3D-Lightmap/blob/master/screenshot/node8_lightmap.png)  
+
+#### Generates textures on texCoord2:
 * direct baked lighting
 * generated lightmaps
 * indirect baked lighting
