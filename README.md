@@ -2,7 +2,7 @@
   
 ---
 ### Description
-Lightmap generator for Urho3D. This implementation is based on **Hugo Elias's Radiosity**. Except, I haven't implemented the skipping of pixels, evaluate, and interpolate part, but brute force pixel processing. And I also use hemisphere instead of hemicube, which is used by all implementations that I've seen that use Hugo's method.
+Lightmap generator for Urho3D. This implementation is based on **Hugo Elias's Radiosity**. Except, I haven't implemented the skipping of pixels, evaluate, and interpolate part, but use brute force pixel processing instead. And I also use hemisphere instead of hemicube, which is used by all implementations that I've seen that use Hugo's method.
 
 Using Urho3D's tech., indirect lighting process is **blazing fast**.  And the accuracy of the lightmap only depends on the resolution that you choose.  
 
